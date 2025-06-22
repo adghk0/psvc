@@ -1,8 +1,11 @@
 from abc import ABCMeta, abstractmethod
-from threading import Thread
 import socket
 import signal
-from threading import Thread, Lock
+from threading import Lock
+import time
+
+from .threads import PsThread
+from .sockets import PsSocket
 
 # Work
 # 서비스 명령어
@@ -19,11 +22,13 @@ class Work (metaclass=ABCMeta):
 class WorkStart (Work):
     def exec(self, commander, param):
         self.service._start()
+        commander.print('Service Started')
 
 
 class WorkStop (Work):
     def exec(self, commander, param):
         self.service._stop()
+        commander.print('Service Stopped')
 
 
 class WorkUnknown (Work):
@@ -34,7 +39,24 @@ class WorkUnknown (Work):
 class WorkStatus (Work):
     def exec(self, commander, param):
         commander.print('status!!!')
+        for name, tr in self.service.threads.items():
+            tr: PsThread
+            commander.print(name + ' - ' + str(tr.is_alive()))
+        
 
+class WorkVersion (Work):
+    def exec(self, commander, param):
+        commander.print(self.service.version)
+
+
+class WorkCheckLatest (Work):
+    def exec(self, commander, param):
+        pass
+
+
+class WorkUpdate (Work):
+    def exec(self, commander, param):
+        pass
 
 # Commander
 # 서비스 명령기
@@ -48,55 +70,50 @@ class Commander (metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def print(self, str):
+    def print(self, str, end='\n'):
         pass
 
 
 class CommanderConsole (Commander):
     def __init__(self, id, control):
         super().__init__(id, control)
-        self.console_worker = Thread(target=self._console, name='CMD-'+id)
+        self.console_worker = PsThread(self.control.service, id, target=self._console)
         self.console_worker.start()
         self.cmd_str = None
     
     def _console(self):
-        while self.control.service.status not in ['Dead']:
+        while self.control.service.is_alive:
             cmd_str = input('>')
             self.control._commanding(self.id, cmd_str)
-            signal.raise_signal(signal.SIGINT)
     
     def handle(self, cmd_str):
         self.control.command(self, cmd_str)
 
-    def print(self, str):
-        print(str)
+    def print(self, str, end='\n'):
+        print(str, end=end)
 
 
 class CommanderSocket (Commander):
-    def __init__(self, id, control, socket: socket.socket):
+    def __init__(self, id, control, socket: PsSocket):
         super().__init__(id, control)
         self.socket = socket
-        self.recv_worker = Thread(target=self._receive, name='CMD-'+id)
+        self.recv_worker = PsThread(self.control.service, self.id, target=self._receive)
         self.recv_worker.start()
 
     def _receive(self):
-        while self.control.service.status not in ['Dead']:
-            self.socket.send('>'.encode())
-            cmd_ended = False
-            msg = ''
-            while not cmd_ended:
-                msg += self.socket.recv(1024).decode()
-                if msg.endswith('\n'):
-                    cmd_ended = True
-            self.control._commanding(self.id, msg.replace('\n', ''))
-            signal.raise_signal(signal.SIGINT)
+        while self.control.service.is_alive:
+            msg, sock_id = self.socket.recv_str()
+            if sock_id != None and msg != None:
+                print('receive' + msg)
+                self.control._commanding(self.id, msg, sock_id)
+            time.sleep(0.1)
             
     def handle(self, cmd_str):
         self.print('executting...')
         self.control.command(self, cmd_str)
 
-    def print(self, str):
-        self.socket.send((str + '\n').encode())
+    def print(self, str, end='\r\n'):
+        self.socket.send_str(str + end, self.control.commander_sep)
 
 
 # Controller
@@ -110,34 +127,35 @@ class Controller:
             'stop': WorkStop,
             'unknown': WorkUnknown, 
             'status': WorkStatus,
+            'version': WorkVersion,
         }
         self.works = self._set_command([], self.works)
         self.commader_sig = signal.signal(signal.SIGINT, self._handle)
         self.commanders = {}
         self.commander_cmd = ''
         self.commander_id = ''
+        self.commander_sep = 0
         self.commander_lock = Lock()
 
         conf = self.service.config['PyService']
-        if conf['use_console']:
-            self.commanders['Console'] = CommanderConsole('Console', self)
-        if conf['use_socket']:
-            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.socket.bind((conf['address'], int(conf['port'])))
-            print('waiting for the socket connection in', conf['address'], conf['port'])
-            self.socket.listen()
-            self.socket_worker = Thread(target=self._socket_work, name='Controller-SocketWorker')
-            self.socket_cnt = 0
-            self.socket_worker.start()
+        if int(conf['use_console']) == 1:
+            self.commanders['Commander-Console'] = CommanderConsole('Commander-Console', self)
+        if int(conf['use_socket']) == 1:
+            self.socket = PsSocket(self.service, 'Commander-Socket')
+            self.socket.bind(conf['address'], conf['port'])
+            self.commanders['Commander-Socket'] = CommanderSocket('Commander-Socket', self, self.socket)
     
-    def _commanding(self, commander_id, commander_cmd):
-        with self.commander_lock:
-            self.commander_id = commander_id
-            self.commander_cmd = commander_cmd
+    def _commanding(self, commander_id, commander_cmd, sep=0):
+        self.commander_lock.acquire()
+        self.commander_id = commander_id
+        self.commander_cmd = commander_cmd
+        self.commander_sep = sep
+        signal.raise_signal(signal.SIGINT)
 
     def _handle(self, signum, frame):
         commander = self.commanders[self.commander_id]
         commander.handle(self.commander_cmd)
+        self.commander_lock.release()
 
     def _set_command(self, up_key: list, works: dict):
         for key, work in works.items():
@@ -146,14 +164,6 @@ class Controller:
             else:
                 works[key] = self._set_command(up_key.append(key), work)
         return works
-    
-    def _socket_work(self):
-        while self.service != 'Dead':
-            conn, addr = self.socket.accept()
-            socket_id = 'Socket' + str(self.socket_cnt)
-            self.commanders[socket_id] = CommanderSocket(socket_id, self, conn)
-            self.socket_cnt += 1
-            print('new socket connection in', addr, socket_id)
 
     def _command(self, commander, cmds, works):
         if isinstance(works, Work):
@@ -165,8 +175,23 @@ class Controller:
             else:
                 self.works['unknown'].exec(commander, cmd)
 
-    def command(self, commander, cmd_str: str):
-        cmds = cmd_str.split(' ')
+    def set_work(self, key: list, work: Work):
+        current_key = key.pop(0)
+        works = self.works
+        result = True
+        while current_key in works:
+            if type(current_key) == dict:
+                works = works[current_key]
+            else:
+                result = False
+                break
+        if result:
+            works[current_key] = work
+        return result
+    
+    def command(self, commander, cmd_str: str): 
+        print(cmd_str)
+        cmds = [c.strip() for c in cmd_str.split(' ')]
         self._command(commander, cmds, self.works)
-        
 
+        

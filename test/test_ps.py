@@ -29,7 +29,7 @@ class TestService (Service):
 
 
 if __name__ == '__main__':
-    ts = TestService(os.path.abspath(os.path.join(os.path.dirname(__file__),'test.conf')))
+    ts = TestService(os.path.abspath(os.path.join(os.path.dirname(__file__),'test_ps.conf')))
 
     
     while ts.is_ready or ts.is_run:
