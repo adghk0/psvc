@@ -11,13 +11,20 @@ class PsSocket:
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.service = service
         self.name = name
+        self.service.sockets[self.name] = self
         self.socket_worker = None
         self.clients = {}
         self.client_cnt = 0
-        # self.max_client = 0 # 최대 연결 (미구현)
         self.role = None
+
+        # Server
+        self._connect_callback = None
+        # self.max_client = 0 # 최대 연결 (미구현)
+
+        # Status
         self.run_listen = False
         self.dead_status = dead_status
+
         self.log = log
         if self.log:
             self.service.log(Level.DEBUG, '(%s) New Socket was created' % (self.name, ), file=self.name)
@@ -50,16 +57,26 @@ class PsSocket:
     # 쓰레드 동작
     def _server_work(self):
         while self.service.status not in self.dead_status and self.run_listen:
-            conn, addr = self.socket.accept()
-            self.client_cnt += 1
-            client_id = self.client_cnt
-            client_name = self.name + '-Client-' + str(client_id)
-            client_worker = PsThread(self.service, client_name, target=self._recv_work, args=(client_id,))
-            self.clients[client_id] = [conn, b'', Lock()]
-            client_worker.start()
-            if self.log:
-                self.service.log(Level.DEBUG, '(%s) Accpet a connection from - (%s)' % (self.name, addr), file=self.name)
+            try:
+                conn, addr = self.socket.accept()
+                self.client_cnt += 1
+                client_id = self.client_cnt
+                client_name = self.name + '-Client-' + str(client_id)
+                client_worker = PsThread(self.service, client_name, target=self._recv_work, args=(client_id,))
+                self.clients[client_id] = [conn, b'', Lock()]
+                client_worker.start()
+                if self._connect_callback != None:
+                    self._connect_callback(client_id)
+
+                if self.log:
+                    self.service.log(Level.DEBUG, '(%s) Accpet a connection from - (%s)' % (self.name, addr), file=self.name)
+            except socket.error as e:
+                self.service.log(Level.WARN, '(%s) socket listening closed' % (self.name,), file=self.name)
+                break
     
+    def set_connect_callback(self, func):
+        self._connect_callback = func
+
     def _recv_work(self, client_id):
         while self.service.status not in self.dead_status:
             try:
@@ -99,15 +116,18 @@ class PsSocket:
             self.socket.send(msg.encode())
             self.service.log(Level.DEBUG, '(%s) Send a message - "%s" to %d' % (self.name, msg, 0), file=self.name)
         else:
-            if type(target) == int:
-                self.clients[target][0].send(msg.encode())
-                if self.log:
-                    self.service.log(Level.DEBUG, '(%s) Send a message - "%s" to %d' % (self.name, msg, target), file=self.name)
-            elif type(target) == list:
-                for id in target:
-                    self.send_str(msg, id)
-            else:
-                print('send socket unknown')
+            try:
+                if type(target) == int and target in self.clients:
+                    self.clients[target][0].send(msg.encode())
+                    if self.log:
+                        self.service.log(Level.DEBUG, '(%s) Send a message - "%s" to %d' % (self.name, msg, target), file=self.name)
+                elif type(target) == list:
+                    for id in target:
+                        self.send_str(msg, id)
+                else:
+                    print('send socket unknown')
+            except socket.error as e:
+                self.close_connection(target)
     
     def recv_str(self, max_length=0, until='\n', target=None):
         result = (None, target)
@@ -150,6 +170,8 @@ class PsSocket:
                 self.service.log(Level.DEBUG, '(%s) close socket connection' % (self.name, ), file=self.name)
         for id in self.client_ids():
             self.close_connection(id)
+        if self.role == 'Server':
+            self.socket.close()
         self.clients = {}
         self.client_cnt = 0
 

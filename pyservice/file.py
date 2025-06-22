@@ -19,3 +19,6 @@ def ps_path(service, *path):
         else:
             result = os.path.abspath(path)
     return result
+
+def copy(origin, destination):
+    pass

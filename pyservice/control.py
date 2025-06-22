@@ -1,5 +1,5 @@
 from abc import ABCMeta, abstractmethod
-import socket
+
 import signal
 from threading import Lock
 import time
@@ -7,56 +7,7 @@ import time
 from .threads import PsThread
 from .sockets import PsSocket
 
-# Work
-# 서비스 명령어
-class Work (metaclass=ABCMeta):
-    def __init__(self, service, key):
-        self.key = key
-        self.service = service
-
-    @abstractmethod
-    def exec(self, commander, param):
-        pass
-
-
-class WorkStart (Work):
-    def exec(self, commander, param):
-        self.service._start()
-        commander.print('Service Started')
-
-
-class WorkStop (Work):
-    def exec(self, commander, param):
-        self.service._stop()
-        commander.print('Service Stopped')
-
-
-class WorkUnknown (Work):
-    def exec(self, commander, param):
-        commander.print('unknown command - ' + param)
-
-
-class WorkStatus (Work):
-    def exec(self, commander, param):
-        commander.print('status!!!')
-        for name, tr in self.service.threads.items():
-            tr: PsThread
-            commander.print(name + ' - ' + str(tr.is_alive()))
-        
-
-class WorkVersion (Work):
-    def exec(self, commander, param):
-        commander.print(self.service.version)
-
-
-class WorkCheckLatest (Work):
-    def exec(self, commander, param):
-        pass
-
-
-class WorkUpdate (Work):
-    def exec(self, commander, param):
-        pass
+from .works import *
 
 # Commander
 # 서비스 명령기
@@ -64,6 +15,9 @@ class Commander (metaclass=ABCMeta):
     def __init__(self, id, control):
         self.id = id
         self.control = control
+
+    def _show_ready(self):
+        self.print('\n[ %s ] $> ' % (self.control.service.name(),), end='')
 
     @abstractmethod
     def handle(self, cmd_str):
@@ -83,7 +37,7 @@ class CommanderConsole (Commander):
     
     def _console(self):
         while self.control.service.is_alive:
-            cmd_str = input('>')
+            cmd_str = input()
             self.control._commanding(self.id, cmd_str)
     
     def handle(self, cmd_str):
@@ -104,17 +58,25 @@ class CommanderSocket (Commander):
         while self.control.service.is_alive:
             msg, sock_id = self.socket.recv_str()
             if sock_id != None and msg != None:
-                print('receive' + msg)
                 self.control._commanding(self.id, msg, sock_id)
             time.sleep(0.1)
+
+    def _new_connection(self, id):
+        self.control._commanding(self.id, 'NOP', id)
             
     def handle(self, cmd_str):
-        self.print('executting...')
         self.control.command(self, cmd_str)
 
     def print(self, str, end='\r\n'):
         self.socket.send_str(str + end, self.control.commander_sep)
 
+
+class CommanderService (Commander):
+    def handle(self, cmd_str):
+        self.control.command(self, cmd_str)
+
+    def print(self, str, end='\n'):
+        print(str, end=end)
 
 # Controller
 # 서비스 명령 처리기
@@ -123,11 +85,22 @@ class Controller:
         self.service = service
         
         self.works = {
+            'NOP': WorkNop,
             'start': WorkStart,
             'stop': WorkStop,
-            'unknown': WorkUnknown, 
+            'restart': WorkRestart, 
             'status': WorkStatus,
             'version': WorkVersion,
+            'ps': {
+                'services': WorkServices,
+                'versions': WorkShowVersions,
+                'latest': WorkCheckLatest,
+                'update': WorkUpdate, 
+            },
+            'file': {
+                'list': WorkFileList,
+            },
+            'unknown': WorkUnknown,
         }
         self.works = self._set_command([], self.works)
         self.commader_sig = signal.signal(signal.SIGINT, self._handle)
@@ -136,19 +109,31 @@ class Controller:
         self.commander_id = ''
         self.commander_sep = 0
         self.commander_lock = Lock()
+        self.commanders['Ps'] = CommanderService('Ps', self)
 
         conf = self.service.config['PyService']
         if int(conf['use_console']) == 1:
             self.commanders['Commander-Console'] = CommanderConsole('Commander-Console', self)
         if int(conf['use_socket']) == 1:
             self.socket = PsSocket(self.service, 'Commander-Socket')
-            self.socket.bind(conf['address'], conf['port'])
             self.commanders['Commander-Socket'] = CommanderSocket('Commander-Socket', self, self.socket)
-    
+            self.socket.set_connect_callback(self.commanders['Commander-Socket']._new_connection)
+            self.socket.bind(conf['cmd_address'], conf['cmd_port'])
+
+    def _cmd_prework(cmd):
+        new_cmd = []
+        for c in cmd:
+            if c == '\b' and new_cmd:
+                new_cmd.pop()
+            else:
+                new_cmd.append(c)
+        new_cmd = ''.join(new_cmd)
+        return new_cmd.strip()
+
     def _commanding(self, commander_id, commander_cmd, sep=0):
         self.commander_lock.acquire()
         self.commander_id = commander_id
-        self.commander_cmd = commander_cmd
+        self.commander_cmd = Controller._cmd_prework(commander_cmd)
         self.commander_sep = sep
         signal.raise_signal(signal.SIGINT)
 
@@ -156,13 +141,14 @@ class Controller:
         commander = self.commanders[self.commander_id]
         commander.handle(self.commander_cmd)
         self.commander_lock.release()
+        commander._show_ready()
 
-    def _set_command(self, up_key: list, works: dict):
+    def _set_command(self, up_key: list, works: dict|Work):
         for key, work in works.items():
-            if issubclass(work, Work):
+            if type(work) == dict:
+                works[key] = self._set_command([*up_key, key], work)
+            elif issubclass(work, Work):
                 works[key] = works[key](self.service, up_key.append(key))
-            else:
-                works[key] = self._set_command(up_key.append(key), work)
         return works
 
     def _command(self, commander, cmds, works):

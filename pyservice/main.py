@@ -19,27 +19,55 @@ Dead
 
 class Service (metaclass=ABCMeta):
     def __init__(self, pgm_file, config_file='./config.conf'):
-        self.root_path = os.path.abspath(os.path.dirname(pgm_file))
         self.status = 'Init'
         self.worker = None
         self.threads = {}
+        self.sockets = {}
         self.commands = []
-        
+        self.executable = sys.executable
+        self.services = {
+            # 'PyService': ('0.0', 'server', 0)
+        }
+
+        # Initing        
+        self.root_path = os.path.abspath(os.path.dirname(pgm_file))
+        self.config_path = ps_path(self, config_file)
+        self.pgm_path = os.path.abspath(pgm_file)
         self.config = ConfigParser()
-        self.config.read(ps_path(self, config_file))
-        self.ps_name = self.config['PyService']['name']
+        self.config.read(self.config_path)
+        
+        self.add_service('PyService')
+        self.add_service(self.name())
+        
         self.log_path = self.config['PyService']['log_path']
-        self.logger = Logger(self, self.log_path)
+        self.logger = Logger(self, self.log_path, int(self.config['PyService']['log_level']))
         self.log(Level.SYSTEM, 'PyService Initting - (%s)' % (self.name(), ))
 
         self.version = self.config['PyService']['version']
+        self.ps_version = self.config['PyService']['version']
         self.control = Controller(self)
         self.init()
+
+        # Version Managing
+        
+        try:
+            for name in self.services.keys():
+                result, version = self.command('ps update ' + name)
+                if result[0] == None:
+                    self.log(Level.SYSTEM, '[%s] is a latest version (%s)' % (self.ps_version, ))
+                elif result[0] == True:
+                    self.log(Level.SYSTEM, '[%s] is updated (%s)' % (version, ))
+                    self.set_config(name, 'version', version)
+                    self._restart()
+                else:
+                    self.log(Level.SYSTEM, '[%s] was not updated (%s)' % (self.ps_version, ))
+        except:
+            pass
 
         self.status = 'Ready'
         self.log(Level.SYSTEM, 'PyService Init Complete - (%s)' % (self.name(), ))
     
-    def stop_ready(self):
+    def _stop_ready(self):
         self.status = 'StopReady'
 
     def _run(self):
@@ -61,17 +89,31 @@ class Service (metaclass=ABCMeta):
         self.log(Level.SYSTEM, 'PyService is Stopping - (%s)' % (self.name(), ))
         result = self.destory()
         if result == None:
+            for socket_name, socket in self.sockets.items():
+                socket.close()
             self.status = 'StopReady'
             self.log(Level.SYSTEM, 'PyService is Stopped - (%s)' % (self.name(), ))
 
-    ####
+    def _restart(self):
+        self.log(Level.SYSTEM, 'Service Restarting...')
+        os.execv(self.executable, [self.executable, self.pgm_path])
+        os._exit(0)
+
+    # === Status methods ===
+
     def command(self, cmd_str):
-        self.control.command(cmd_str)
+        result = self.control._commanding('Ps', cmd_str)
         self.log(Level.DEBUG, '(%s) executed a command - "%s"' % (self.name(), cmd_str))
+        return result
 
     def join(self):
         self.control.join()
     
+    def set_config(self, section, key, value):
+        self.config.set(section, key, value)
+        with open(self.config_path, 'w') as f:
+            self.config.write(f)
+
     @property
     def is_ready(self):
         return self.status in ['Ready']
@@ -84,6 +126,16 @@ class Service (metaclass=ABCMeta):
     def is_alive(self):
         return self.status not in ['Dead']
     
+    
+    # === User uses methods ===
+
+    def add_service(self, name):
+        if name != None and name in self.config.sections():
+            version = self.config[name]['version']
+            update_address = self.config[name]['update_address']
+            update_port = int(self.config[name]['update_port'])
+            self.services[name] = (version, update_address, update_port)
+
     def set_work(self, key, work):
         self.control._set_command(key, work)
 
@@ -101,11 +153,12 @@ class Service (metaclass=ABCMeta):
 
     def log_debug(self, msg: str, file=None):
         self.logger.log(Level.DEBUG, msg, file)
-    #### 
-    
-    @abstractmethod
+
+
+    # === User Overrides methods ===
+     
     def name(self):
-        pass
+        return None
 
     @abstractmethod
     def run(self):
@@ -116,3 +169,4 @@ class Service (metaclass=ABCMeta):
 
     def destory(self):
         pass
+
