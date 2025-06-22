@@ -81,44 +81,55 @@ class CommanderService (Commander):
 # Controller
 # 서비스 명령 처리기
 class Controller:
-    def __init__(self, service):
+    def __init__(self, service, least=False):
         self.service = service
-        
-        self.works = {
-            'NOP': WorkNop,
-            'start': WorkStart,
-            'stop': WorkStop,
-            'restart': WorkRestart, 
-            'status': WorkStatus,
-            'version': WorkVersion,
-            'ps': {
-                'services': WorkServices,
-                'versions': WorkShowVersions,
-                'latest': WorkCheckLatest,
-                'update': WorkUpdate, 
-            },
-            'file': {
-                'list': WorkFileList,
-            },
-            'unknown': WorkUnknown,
-        }
-        self.works = self._set_command([], self.works)
-        self.commader_sig = signal.signal(signal.SIGINT, self._handle)
-        self.commanders = {}
-        self.commander_cmd = ''
-        self.commander_id = ''
-        self.commander_sep = 0
-        self.commander_lock = Lock()
-        self.commanders['Ps'] = CommanderService('Ps', self)
+        self.least = least
 
-        conf = self.service.config['PyService']
-        if int(conf['use_console']) == 1:
-            self.commanders['Commander-Console'] = CommanderConsole('Commander-Console', self)
-        if int(conf['use_socket']) == 1:
-            self.socket = PsSocket(self.service, 'Commander-Socket')
-            self.commanders['Commander-Socket'] = CommanderSocket('Commander-Socket', self, self.socket)
-            self.socket.set_connect_callback(self.commanders['Commander-Socket']._new_connection)
-            self.socket.bind(conf['cmd_address'], conf['cmd_port'])
+        if not least:
+            self.works = {
+                'NOP': WorkNop,
+                'start': WorkStart,
+                'stop': WorkStop,
+                'restart': WorkRestart, 
+                'status': WorkStatus,
+                'version': WorkVersion,
+                'ps': {
+                    'services': WorkServices,
+                    'versions': WorkShowVersions,
+                    'latest': WorkCheckLatest,
+                    'update': WorkUpdate, 
+                },
+                'file': {
+                    'list': WorkFileList,
+                },
+                'unknown': WorkUnknown,
+            }
+            self.works = self._set_command([], self.works)
+            self.commader_sig = signal.signal(signal.SIGINT, self._handle)
+            self.commanders = {}
+            self.commander_cmd = ''
+            self.commander_id = ''
+            self.commander_sep = 0
+            self.commander_lock = Lock()
+            self.commanders['Ps'] = CommanderService('Ps', self)
+
+            conf = self.service.config['PyService']
+            if int(conf['use_console']) == 1:
+                self.commanders['Commander-Console'] = CommanderConsole('Commander-Console', self)
+            if int(conf['use_socket']) == 1:
+                self.socket = PsSocket(self.service, 'Commander-Socket')
+                self.commanders['Commander-Socket'] = CommanderSocket('Commander-Socket', self, self.socket)
+                self.socket.set_connect_callback(self.commanders['Commander-Socket']._new_connection)
+                self.socket.bind(conf['cmd_address'], conf['cmd_port'])
+        else:
+            self.works = {}
+            self.commader_sig = signal.signal(signal.SIGTERM, self._handle)
+            self.commanders = {}
+            self.commander_cmd = ''
+            self.commander_id = ''
+            self.commander_sep = 0
+            self.commander_lock = Lock()
+            self.commanders['Ps'] = CommanderService('Ps', self)
 
     def _cmd_prework(cmd):
         new_cmd = []
@@ -135,13 +146,17 @@ class Controller:
         self.commander_id = commander_id
         self.commander_cmd = Controller._cmd_prework(commander_cmd)
         self.commander_sep = sep
-        signal.raise_signal(signal.SIGINT)
+        if self.least:
+            signal.raise_signal(signal.SIGTERM)
+        else:
+            signal.raise_signal(signal.SIGINT)
 
     def _handle(self, signum, frame):
         commander = self.commanders[self.commander_id]
         commander.handle(self.commander_cmd)
         self.commander_lock.release()
-        commander._show_ready()
+        if not self.least:
+            commander._show_ready()
 
     def _set_command(self, up_key: list, works: dict|Work):
         for key, work in works.items():
@@ -159,7 +174,8 @@ class Controller:
             if cmd in works:
                 self._command(commander, cmds, works[cmd])
             else:
-                self.works['unknown'].exec(commander, cmd)
+                if not self.least:
+                    self.works['unknown'].exec(commander, cmd)
 
     def set_work(self, key: list, work: Work):
         current_key = key.pop(0)
@@ -172,7 +188,7 @@ class Controller:
                 result = False
                 break
         if result:
-            works[current_key] = work
+            works[current_key] = work(self.service, key)
         return result
     
     def command(self, commander, cmd_str: str): 

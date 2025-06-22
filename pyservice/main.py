@@ -47,9 +47,8 @@ class Service (metaclass=ABCMeta):
         self.ps_version = self.config['PyService']['version']
         self.control = Controller(self)
         self.init()
-
-        # Version Managing
         
+        # Version Managing
         try:
             for name in self.services.keys():
                 result, version = self.command('ps update ' + name)
@@ -107,7 +106,7 @@ class Service (metaclass=ABCMeta):
         return result
 
     def join(self):
-        self.control.join()
+        self.worker.join()
     
     def set_config(self, section, key, value):
         self.config.set(section, key, value)

@@ -4,5 +4,4 @@ from .server import ServerService
 
 __name__ = [
     'Service',
-    'ServerService',
 ]

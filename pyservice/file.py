@@ -1,4 +1,5 @@
 import os
+import shutil
 
 def mkdir(path):
     path = os.path.abspath(path)
@@ -21,4 +22,12 @@ def ps_path(service, *path):
     return result
 
 def copy(origin, destination):
-    pass
+    if os.path.exists(origin):
+        if os.path.isdir(origin):
+            mkdir(destination)
+            for f in os.listdir(origin):
+                copy(os.path.join(origin, f), os.path.join(destination, f))
+        else:
+            shutil.copy2(origin, destination)
+    else:
+        return 1
