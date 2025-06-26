@@ -1,11 +1,13 @@
 import sys, os
 import time
+import re
 
 from .main import Service
 from .control import CommanderSocket, Controller
 from .sockets import PsSocket
 from .works import *
 from .file import copy
+
 
 class ServerService (Service):
     def init(self):
@@ -14,6 +16,11 @@ class ServerService (Service):
         self.server_port = int(self.server_conf['port'])
         self.server_service = self.server_conf['service_name']
         self.server_dir = os.path.join(self.server_conf['server_dir'], self.server_service)
+        self._release_ignore = [
+            re.compile(r'(^|[/\\])\.[^/\\]+'),  # .으로 시작하는 파일/폴더
+            re.compile(r'(^|[/\\])log$'),       # log로 끝나는 파일/폴더
+            re.compile(r'\.conf$'),    # .conf로 끝나는 파일
+        ]
 
         self.server_sock = PsSocket(self, 'PsServer-Socket')
         self.server_sock.bind(self.server_address, self.server_port)
@@ -33,6 +40,9 @@ class ServerService (Service):
 
     def run(self):
         time.sleep(5)
+
+    def append_ignore(self, rec: re.Pattern):
+        self._release_ignore.append(rec)
     
 # Server 
 class WorkVersionList (Work):
@@ -56,15 +66,19 @@ class WorkRelease (Work):
         id = commander.control.commander_sep
         service = commander.control.service
         sock = service.server_sock
-        if len(param) == 0:
-            param.append(service.server_conf['source_dir'])
             
-        if len(param) == 1:
-            vers = service.server_versions[-1].split('.')
-            vers[-1] = str(int(vers[-1])+1)
+        if len(param) == 0:
+            if len(service.server_versions) > 0:
+                vers = service.server_versions[-1].split('.')
+                vers[-1] = str(int(vers[-1])+1)
+            else:
+                vers = ['0']*3
             param.append('.'.join(vers))
+        
+        if len(param) == 1:
+            param.append(service.server_conf['source_dir'])
 
-        result = copy(param[0], os.path.join(service.server_dir, param[1]))
+        result = copy(param[1], os.path.join(service.server_dir, param[0]), service._release_ignore)
         if result == 1:
             sock.send_str('Fail\r\n', id)
         else:

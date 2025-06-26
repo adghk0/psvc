@@ -1,8 +1,11 @@
 from abc import ABCMeta, abstractmethod
 
 import os
+import time, traceback
 
-from .file import ps_path
+from .file import ps_path, copy
+from .sockets import PsSocket
+from .log import Level
 
 # Work
 # 서비스 명령어
@@ -51,34 +54,58 @@ class WorkStatus (Work):
         commander.print('status!!!')
         for name, tr in self.service.threads.items():
             commander.print(name + ' - ' + str(tr.is_alive()))
-        
 
 class WorkVersion (Work):
     def exec(self, commander, param):
         commander.print(self.service.version)
 
 
+class WorkExit (Work):
+    def exec(self, commander, param):
+        commander.exit()
+
+
 # === Version ===
 
-class WorkServices (Work):
+class WorkCheckUpdate (Work):
     def exec(self, commander, param):
-        pass
-
-
-class WorkShowVersions(Work):
-    def exec(self, commander, param):
-        pass
-
-
-class WorkCheckLatest (Work):
-    def exec(self, commander, param):
-        pass
-
+        service = commander.control.service
+        info = service.services[param[0]]
+        result = (None, '')
+        try:
+            sock = PsSocket(service, name='UpdateSocket')
+            sock.connect(info[1], info[2])
+            sock.send_str('latest')
+            latest = sock.recv_str()[0].strip()
+            if latest > info[0]:
+                result = (True, latest)
+            else:
+                result = (False, '')
+        except Exception as e:
+            service.log_warn('Cannot connect to update server (%s)' % (param[0],))
+            service.log(Level.DEBUG, traceback.format_exc())
+        finally:
+            if sock:
+                sock.close()
+        return result
+        
 
 class WorkUpdate (Work):
     def exec(self, commander, param):
-        pass
-
+        service = commander.control.service
+        info = service.services[param[0]]
+        try:
+            copy(service.pgm_path, os.path.join(service.pgm_path, '.rollback'))
+            sock = PsSocket(service, name='UpdateSocket')
+            sock.connect(info[1], info[2])
+            sock.send_str('req %s' % param[1])
+            sock.recv_files(service.pgm_path)
+        except Exception as e:
+            service.log_warn('Cannot update from update server (%s)' % (param[0],))
+            service.log(Level.DEBUG, traceback.format_exc())
+        finally:
+            if sock:
+                sock.close()
 
 # === File ===
 

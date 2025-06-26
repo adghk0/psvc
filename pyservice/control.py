@@ -27,6 +27,10 @@ class Commander (metaclass=ABCMeta):
     def print(self, str, end='\n'):
         pass
 
+    @abstractmethod
+    def exit(self):
+        pass
+
 
 class CommanderConsole (Commander):
     def __init__(self, id, control):
@@ -45,6 +49,9 @@ class CommanderConsole (Commander):
 
     def print(self, str, end='\n'):
         print(str, end=end)
+
+    def exit(self):
+        self.print('Console commander can not exit')
 
 
 class CommanderSocket (Commander):
@@ -70,6 +77,10 @@ class CommanderSocket (Commander):
     def print(self, str, end='\r\n'):
         self.socket.send_str(str + end, self.control.commander_sep)
 
+    def exit(self):
+        id = self.control.commander_sep
+        self.socket.close_connection(id)
+
 
 class CommanderService (Commander):
     def handle(self, cmd_str):
@@ -77,6 +88,9 @@ class CommanderService (Commander):
 
     def print(self, str, end='\n'):
         print(str, end=end)
+
+    def exit(self):
+        pass
 
 # Controller
 # 서비스 명령 처리기
@@ -93,10 +107,9 @@ class Controller:
                 'restart': WorkRestart, 
                 'status': WorkStatus,
                 'version': WorkVersion,
+                'exit': WorkExit,
                 'ps': {
-                    'services': WorkServices,
-                    'versions': WorkShowVersions,
-                    'latest': WorkCheckLatest,
+                    'check_update': WorkCheckUpdate,
                     'update': WorkUpdate, 
                 },
                 'file': {
@@ -110,6 +123,8 @@ class Controller:
             self.commander_cmd = ''
             self.commander_id = ''
             self.commander_sep = 0
+            self._command_result = None
+            self.command_wait = False
             self.commander_lock = Lock()
             self.commanders['Ps'] = CommanderService('Ps', self)
 
@@ -128,6 +143,8 @@ class Controller:
             self.commander_cmd = ''
             self.commander_id = ''
             self.commander_sep = 0
+            self._command_result = None
+            self.command_wait = False
             self.commander_lock = Lock()
             self.commanders['Ps'] = CommanderService('Ps', self)
 
@@ -141,8 +158,10 @@ class Controller:
         new_cmd = ''.join(new_cmd)
         return new_cmd.strip()
 
-    def _commanding(self, commander_id, commander_cmd, sep=0):
+    def _commanding(self, commander_id, commander_cmd, sep=0, wait=False):
         self.commander_lock.acquire()
+        self._command_result = None
+        self.command_wait = wait
         self.commander_id = commander_id
         self.commander_cmd = Controller._cmd_prework(commander_cmd)
         self.commander_sep = sep
@@ -154,7 +173,8 @@ class Controller:
     def _handle(self, signum, frame):
         commander = self.commanders[self.commander_id]
         commander.handle(self.commander_cmd)
-        self.commander_lock.release()
+        if not self.command_wait:
+            self.commander_lock.release()
         if not self.least:
             commander._show_ready()
 
@@ -167,15 +187,17 @@ class Controller:
         return works
 
     def _command(self, commander, cmds, works):
+        result = None
         if isinstance(works, Work):
             works.exec(commander, cmds)
         else:
             cmd = cmds.pop(0)
             if cmd in works:
-                self._command(commander, cmds, works[cmd])
+                result = self._command(commander, cmds, works[cmd])
             else:
                 if not self.least:
                     self.works['unknown'].exec(commander, cmd)
+        return result
 
     def set_work(self, key: list, work: Work):
         current_key = key.pop(0)
@@ -192,8 +214,18 @@ class Controller:
         return result
     
     def command(self, commander, cmd_str: str): 
-        print(cmd_str)
         cmds = [c.strip() for c in cmd_str.split(' ')]
-        self._command(commander, cmds, self.works)
+        self._command_result = self._command(commander, cmds, self.works)
+        if self._command_result == None:
+            self._command_result = 1
+    
+    @property
+    def command_finished(self):
+        return self._command_result != None
+
+    def command_result(self):
+        result = self._command_result
+        self.commander_lock.release()
+        return result
 
         

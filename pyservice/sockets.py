@@ -3,12 +3,15 @@ import os
 
 from .threads import PsThread
 from .log import Level
+from .file import mkdir
 
 from threading import Lock
 import time
+import re
 
 class PsSocket:
     _chunk = 16384
+    _file_re = re.compile('^|(.*)|$')
     
     def __init__(self, service, name='Socket', dead_status=['Dead'], log=True):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -134,14 +137,14 @@ class PsSocket:
         self.clients = {}
         self.client_cnt = 0
 
-    def send_bytes(self, msg:bytes, target=None|int):
+    def send_bytes(self, msg:bytes, target:None|int=None):
         if target == None and self.role == 'Client':
             target = 0
         self.clients[target][0].send(msg)
         self.service.log(Level.DEBUG, '(%s) Send a message - "%s" to %d' % (self.name, msg, target), file=self.name)
     
     # 송수신 메소드
-    def send_str(self, msg: str, target=None|int|list):
+    def send_str(self, msg: str, target:None|int|list=None):
         if target == None and self.role == 'Client':
             self.socket.send(msg.encode())
             self.service.log(Level.DEBUG, '(%s) Send a message - "%s" to %d' % (self.name, msg, 0), file=self.name)
@@ -159,33 +162,6 @@ class PsSocket:
             except socket.error as e:
                 self.close_connection(target)
     
-    def recv_str(self, max_length=0, until='\n', target=None):
-        result = (None, target)
-        if target == None:
-            for id, (conn, buf, buf_lock) in self.clients.items():
-                if self.recv_available(id, until)[0] >= 0:
-                    result = self.recv_str(max_length, until, target=id)
-        else:
-            if self.recv_available(target, until)[0] >= 0:
-                conn, buf, buf_lock = self.clients[target]
-                with buf_lock:
-                    if until == None:
-                        msg = buf.decode()
-                        self.clients[target][1] = b''
-                        result = (msg, target)
-                    else:
-                        buf: bytes
-                        cnt = buf.find(until.encode())
-                        if cnt >= 0:
-                            msg = buf[:cnt].decode()
-                            self.clients[target][1] = buf[cnt+1:]
-                            result = (msg, target)
-                        else:
-                            result = (None, target)
-            else:
-                result = (None, target)
-        return result
-    
     def send_file(self, file: str, target:int, dir='', show_dir=''):
         self.send_str('|file|%s|' % (os.path.join(show_dir, os.path.basename(file)), ), target)
         with open(os.path.join(dir, file), 'rb') as f:
@@ -198,6 +174,7 @@ class PsSocket:
 
     def send_files(self, file_dir: str, target:int, dir='', show_dir=''):
         file_dir = os.path.join(dir, file_dir)
+        self.send_str('|files_start|',target)
         if os.path.isdir(file_dir):
             _dir = file_dir
             _show_dir = os.path.join(show_dir, os.path.basename(file_dir))
@@ -207,3 +184,77 @@ class PsSocket:
                 self.send_files(f, target, _dir, _show_dir)
         else:
             self.send_file(os.path.join(dir, file_dir), target, dir, show_dir)
+        self.send_str('|files_end|',target)
+
+    def recv_bytes(self, target:int=0):
+        msg = self.clients[target][0].recv(PsSocket._chunk)
+        self.service.log(Level.DEBUG, '(%s) Send a message - "%s" to %d' % (self.name, msg, target), file=self.name)
+        return msg
+        
+    def recv_str(self, max_length=0, until='\n', target=None, wait=True):
+        result = (None, target)
+        if target == None:
+            for id, (conn, buf, buf_lock) in self.clients.items():
+                result = self.recv_str(max_length, until, target=id, wait=False)
+                if result[0] != None:
+                    break
+        else:
+            recv_end = False
+            while recv_end:
+                if self.recv_available(target, until)[0] > 0:
+                    conn, buf, buf_lock = self.clients[target]
+                    with buf_lock:
+                        if until == None:
+                            msg = buf.decode()
+                            self.clients[target][1] = b''
+                            result = (msg, target)
+                            recv_end = True
+                        else:
+                            buf: bytes
+                            cnt = buf.find(until.encode())
+                            if cnt >= 0:
+                                msg = buf[:cnt].decode()
+                                self.clients[target][1] = buf[cnt+1:]
+                                result = (msg, target)
+                                recv_end = True
+                            else:
+                                pass
+                else:
+                    if not wait:
+                        recv_end = True
+
+            else:
+                result = (None, target)
+        return result
+
+    def recv_file(self, file_path, target:int=0):
+        size = int(self.recv_str(target=target)[0].strip())
+        c_size = 0
+        with open(file_path, 'wb') as f:
+            while True:
+                msg = self.recv_bytes(target)
+                c_size += len(msg)
+                f.write(msg)
+                if c_size >= size:
+                    break
+        
+    def recv_files(self, file_dir, target:int=0):
+        file_dir = os.path.join(dir, file_dir)
+        while True:
+            rec = self.recv_str(target=target)[0].strip()
+            rec_find = self._file_re.findall(rec)
+            if rec_find:
+                msg = rec_find[0]
+                if msg == 'files_start':
+                    pass
+                elif msg.startwith('dir|'):
+                    t_path = os.path.join(file_dir, msg.split('|')[1])
+                    if not os.path.isdir(t_path):
+                        mkdir(t_path)
+                elif msg.startwith('file|'):
+                    t_path = os.path.join(file_dir, msg.split('|')[1])
+                    self.recv_file(t_path, target)
+                elif msg == 'files_end':
+                    break
+                else:
+                    raise socket.error

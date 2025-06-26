@@ -3,6 +3,8 @@ from abc import ABCMeta, abstractmethod
 from functools import wraps
 from configparser import ConfigParser
 
+import time
+
 from .log import Level, Logger
 from .file import ps_path
 from .control import Controller
@@ -43,25 +45,24 @@ class Service (metaclass=ABCMeta):
         self.logger = Logger(self, self.log_path, int(self.config['PyService']['log_level']))
         self.log(Level.SYSTEM, 'PyService Initting - (%s)' % (self.name(), ))
 
-        self.version = self.config['PyService']['version']
         self.ps_version = self.config['PyService']['version']
         self.control = Controller(self)
         self.init()
-        
+
         # Version Managing
-        try:
+        if self.config['PyService']['start_update'] == '1':
             for name in self.services.keys():
-                result, version = self.command('ps update ' + name)
+                result, version = self.command('ps check_update %s' % (name, ), True)
                 if result[0] == None:
-                    self.log(Level.SYSTEM, '[%s] is a latest version (%s)' % (self.ps_version, ))
+                    self.log(Level.SYSTEM, '[%s] is a latest version (%s)' % (name, self.ps_version, ))
                 elif result[0] == True:
-                    self.log(Level.SYSTEM, '[%s] is updated (%s)' % (version, ))
+                    self.log(Level.SYSTEM, '[%s] is updating (%s)' % (name, self.ps_version))
+                    result = self.command('ps update %s %s' % (name, version), True)
+                    self.log(Level.SYSTEM, '[%s] is updated (%s)' % (name, version))
                     self.set_config(name, 'version', version)
                     self._restart()
                 else:
-                    self.log(Level.SYSTEM, '[%s] was not updated (%s)' % (self.ps_version, ))
-        except:
-            pass
+                    self.log(Level.SYSTEM, '[%s] was not updated (%s)' % (name, self.ps_version, ))
 
         self.status = 'Ready'
         self.log(Level.SYSTEM, 'PyService Init Complete - (%s)' % (self.name(), ))
@@ -95,13 +96,19 @@ class Service (metaclass=ABCMeta):
 
     def _restart(self):
         self.log(Level.SYSTEM, 'Service Restarting...')
+        self._stop()
         os.execv(self.executable, [self.executable, self.pgm_path])
         os._exit(0)
 
     # === Status methods ===
 
-    def command(self, cmd_str):
-        result = self.control._commanding('Ps', cmd_str)
+    def command(self, cmd_str, wait=False):
+        self.control._commanding('Ps', cmd_str, wait=wait)
+        result = None
+        if wait:
+            while self.control.command_finished:
+                time.sleep(0.1)
+            result = self.control.command_result()
         self.log(Level.DEBUG, '(%s) executed a command - "%s"' % (self.name(), cmd_str))
         return result
 

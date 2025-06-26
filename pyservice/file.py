@@ -21,13 +21,19 @@ def ps_path(service, *path):
             result = os.path.abspath(path)
     return result
 
-def copy(origin, destination):
+def copy(origin, destination, ignore_list=[]):
     if os.path.exists(origin):
-        if os.path.isdir(origin):
-            mkdir(destination)
-            for f in os.listdir(origin):
-                copy(os.path.join(origin, f), os.path.join(destination, f))
-        else:
-            shutil.copy2(origin, destination)
+        ignore = False
+        for ire in ignore_list:
+            if ire.search(origin):
+                ignore = True
+                break
+        if not ignore:
+            if os.path.isdir(origin):
+                mkdir(destination)
+                for f in os.listdir(origin):
+                    copy(os.path.join(origin, f), os.path.join(destination, f), ignore_list)
+            else:
+                shutil.copy2(origin, destination)
     else:
         return 1
