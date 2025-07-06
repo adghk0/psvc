@@ -13,6 +13,7 @@ from .log import Level
 _rollback_ignore = [
     re.compile(r'(^|[/\\])\.[^/\\]+'),  # .으로 시작하는 파일/폴더
     re.compile(r'(^|[/\\])log$'),       # log로 끝나는 파일/폴더
+    re.compile(r'\.conf$'),             # .conf로 끝나는 파일
 ]
 
 # Work

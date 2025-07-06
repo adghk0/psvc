@@ -200,7 +200,7 @@ class Controller:
     def _command(self, commander, cmds, works):
         result = None
         if isinstance(works, Work):
-            works.exec(commander, cmds)
+            result = works.exec(commander, cmds)
         else:
             cmd = cmds.pop(0)
             if cmd in works:

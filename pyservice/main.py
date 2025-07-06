@@ -58,11 +58,12 @@ class Service:
         if self.config['PyService']['start_update'] == '1' and self.config[self.name]['update_failed'] == '0':
             try:
                 result, version = self.command('ps check_update %s' % (self.name, ), True)
+                print(result, version)
                 if result == None:
                     self.log(Level.SYSTEM, '[%s] is a latest version (%s)' % (self.name, self.ps_version, ))
 
                 elif result == True:
-                    self.set_config(self.name, 'update_failed', 1)
+                    self.set_config(self.name, 'update_failed', '1')
                     self.log(Level.SYSTEM, '[%s] is updating (%s)' % (self.name, self.ps_version))
                     result = self.command('ps update %s %s' % (self.name, version), True)
                     
@@ -100,11 +101,11 @@ class Service:
         while self.status in ['Running', 'Stopping']:
             try:
                 self.run()
-                self.set_config(self.name, 'update_failed', 0)
+                self.set_config(self.name, 'update_failed', '0')
             except:
                 if self.config[self.name]['update_failed'] == '1':
                     copy(os.path.join(self.pgm_path, '.rollback', self.name), self.pgm_path)
-                    self.set_config(self.name, 'update_failed', 1)
+                    self.set_config(self.name, 'update_failed', '1')
                 self.log_err('Error in Service Running')
             if self.status == 'Stopping':
                 self._stop()
@@ -116,13 +117,15 @@ class Service:
             self.worker = PsThread(self, 'Worker', target=self._run)
             self.worker.start()
             for sub_sock in self.services:
+                self.services[sub_sock].reconnect()
                 self.services[sub_sock].send_str('start\r\n')
             self.log(Level.SYSTEM, 'PyService Started - (%s)' % (self.name, ))
 
     def _stop(self):
         for sub_sock in self.services:
+            self.services[sub_sock].reconnect()
             self.services[sub_sock].send_str('stop\r\n')
-            time.sleep(1)
+        time.sleep(1)
         
         self.status = 'Stopping'
         self.log(Level.SYSTEM, 'PyService is Stopping - (%s)' % (self.name, ))
@@ -146,19 +149,22 @@ class Service:
         self.control._commanding('Ps', cmd_str, wait=wait)
         result = None
         if wait:
-            while self.control.command_finished:
+            while not self.control.command_finished:
                 time.sleep(0.1)
             result = self.control.command_result()
-        self.log(Level.DEBUG, '(%s) executed a command - "%s"' % (self.name(), cmd_str))
+        self.log(Level.DEBUG, '(%s) executed a command - "%s"' % (self.name, cmd_str))
         return result
 
     def join(self):
         self.worker.join()
     
     def set_config(self, section, key, value):
-        self.config.set(section, key, value)
-        with open(self.config_path, 'w') as f:
-            self.config.write(f)
+        try:
+            self.config.set(section, key, value)
+            with open(self.config_path, 'w') as f:
+                self.config.write(f)
+        except:
+            print('error')
 
     @property
     def is_ready(self):

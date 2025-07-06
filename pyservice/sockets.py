@@ -47,9 +47,15 @@ class PsSocket:
         if self.log:
             self.service.log(Level.DEBUG, '(%s) New Socket listen at - (%s : %s)' % (self.name, addr, str(port)), file=self.name)
         
+    def reconnect(self):
+        self.__init__(self.service, self.name, self.dead_status, self.log)
+        self.connect(self.addr, self.port)
+
     def connect(self, addr, port):
         id = 0
         self.close()
+        self.addr = addr
+        self.port = port
         self.socket.connect((addr, int(port)))
         client_name = self.name + '-Client-' + str(id)
         client_worker = PsThread(self.service, client_name, target=self._recv_work, args=(id,))
