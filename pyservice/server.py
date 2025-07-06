@@ -88,7 +88,7 @@ class WorkRelease (Work):
             param.append(os.path.join(service.server_conf['source_dir']))
 
         if len(param) == 2:
-            if len(service.server_versions[param[0]]) > 0:
+            if param[0] in service.server_versions and len(service.server_versions[param[0]]) > 0:
                 vers = service.server_versions[param[0]][0-1].split('.')
                 vers[-1] = str(int(vers[-1])+1)
             else:

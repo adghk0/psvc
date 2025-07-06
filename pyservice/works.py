@@ -108,7 +108,7 @@ class WorkUpdate (Work):
             sock.connect(service.update_server, service.update_port)
             sock.send_str('req %s %s\n' % (param[0], param[1]))
             sock.recv_files(service.root_path)
-
+            service.set_config(param[0], 'version', param[1])
         except Exception as e:
             service.log_warn('Cannot update from update server (%s)' % (param[0],))
             service.log(Level.DEBUG, traceback.format_exc())

@@ -11,7 +11,7 @@ import re
 
 class PsSocket:
     _chunk = 16384
-    _file_re = re.compile('^|(.*)|$')
+    _file_re = re.compile(r'^\|(.+)\|$')
     
     def __init__(self, service, name='Socket', dead_status=['Dead'], log=True):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -100,8 +100,7 @@ class PsSocket:
                 with self.clients[client_id][2]:
                     self.clients[client_id][1] = self.clients[client_id][1] + msg
                     if self.log:
-                        self.service.log(Level.DEBUG, '(%s) Receive a message - "%s" from %d' % (self.name, msg, client_id), file=self.name)
-                        self.service.log(Level.DEBUG, '(%s) %d - Message Buffer : %s' % (self.name, client_id, self.clients[client_id][1].decode()), file=self.name)
+                        self.service.log(Level.DEBUG, '(%s) Receive a message - "%s" (%d) from %d' % (self.name, msg, len(msg), client_id), file=self.name)
             except socket.error as e:
                 self.close_connection(client_id)
                 break
@@ -142,6 +141,7 @@ class PsSocket:
             self.socket.close()
         else:
             self.close_connection(0)
+        self.role = None
         self.clients = {}
         self.client_cnt = 0
 
@@ -149,19 +149,29 @@ class PsSocket:
         if target == None and self.role == 'Client':
             target = 0
         self.clients[target][0].send(msg)
-        self.service.log(Level.DEBUG, '(%s) Send a message - "%s" to %d' % (self.name, msg, target), file=self.name)
+        if self.log:
+            self.service.log(Level.DEBUG, '(%s) Send a message - "%s" (%d) to %d' % (self.name, msg, len(msg), target), file=self.name)
     
     # 송수신 메소드
     def send_str(self, msg: str, target:None|int|list=None):
         if target == None and self.role == 'Client':
             self.socket.send(msg.encode())
-            self.service.log(Level.DEBUG, '(%s) Send a message - "%s" to %d' % (self.name, msg, 0), file=self.name)
+            if self.log:
+                if len(msg) > 10:
+                    show_msg = msg[:10]
+                else:
+                    show_msg = msg
+                self.service.log(Level.DEBUG, '(%s) Send a message - "%s" (%d) to %d' % (self.name, show_msg, len(msg), 0), file=self.name)
         else:
             try:
                 if type(target) == int and target in self.clients:
                     self.clients[target][0].send(msg.encode())
                     if self.log:
-                        self.service.log(Level.DEBUG, '(%s) Send a message - "%s" to %d' % (self.name, msg, target), file=self.name)
+                        if len(msg) > 10:
+                            show_msg = msg[:10]
+                        else:
+                            show_msg = msg
+                        self.service.log(Level.DEBUG, '(%s) Send a message - "%s" (%d) to %d' % (self.name, show_msg, len(msg), target), file=self.name)
                 elif type(target) == list:
                     for id in target:
                         self.send_str(msg, id)
@@ -170,10 +180,11 @@ class PsSocket:
             except socket.error as e:
                 self.close_connection(target)
     
-    def send_file(self, file: str, target:int, dir='', show_dir=''):
-        self.send_str('|file|%s|' % (os.path.join(show_dir, os.path.basename(file)), ), target)
-        with open(os.path.join(dir, file), 'rb') as f:
-            self.send_str(str(os.path.getsize(file)) + '|')
+    def send_file(self, file: str, target:int, show_dir=''):
+        self.send_str('|file,%s|\n' % (os.path.join(show_dir, os.path.basename(file))), target)
+
+        with open(file, 'rb') as f:
+            self.send_str(str(os.path.getsize(file)) + '\n', target)
             while True:
                 msg = f.read(PsSocket._chunk)
                 if not msg:
@@ -183,23 +194,36 @@ class PsSocket:
     def send_files(self, file_dir: str, target:int, dir='', show_dir=''):
         file_dir = os.path.join(dir, file_dir)
         if show_dir == '':
-            self.send_str('|files_start|',target)
+            self.send_str('|files_start|\n',target)
+
         if os.path.isdir(file_dir):
-            _dir = file_dir
-            _show_dir = os.path.join(show_dir, os.path.basename(file_dir))
-            self.send_str('|dir|%s|' % (_show_dir, ), target)
-
             for f in os.listdir(file_dir):
-                self.send_files(f, target, _dir, _show_dir)
+                if os.path.isdir(os.path.join(file_dir, f)):
+                    _show_dir = os.path.join(show_dir, f)
+                    self.send_str('|dir,%s|\n'% (_show_dir, ), target)
+                    self.send_files(f, target, file_dir, _show_dir)
+                else:
+                    self.send_file(os.path.join(file_dir, f), target, show_dir)        
         else:
-            self.send_file(os.path.join(dir, file_dir), target, dir, show_dir)
-        if show_dir == '':
-            self.send_str('|files_end|',target)
+            self.send_file(file_dir, target, show_dir)
 
-    def recv_bytes(self, target:int=0):
-        msg = self.clients[target][0].recv(PsSocket._chunk)
-        self.service.log(Level.DEBUG, '(%s) Send a message - "%s" to %d' % (self.name, msg, target), file=self.name)
-        return msg
+        if show_dir == '':
+            self.send_str('|files_end|\n', target)
+
+    def recv_bytes(self, max_length, target: int = 0):
+        data = b''
+        while len(data) < max_length:
+            with self.clients[target][2]:  # Lock
+                buf = self.clients[target][1]
+                if len(buf) == 0:
+                    pass  # 아무것도 수신되지 않았음
+                else:
+                    to_take = min(max_length - len(data), len(buf))
+                    data += buf[:to_take]
+                    self.clients[target][1] = buf[to_take:]  # 남은 건 다시 저장
+            if len(data) < max_length:
+                time.sleep(0.01)  # 잠깐 기다리기
+        return data
         
     def recv_str(self, max_length=0, until='\n', target=None, wait=True):
         result = (None, target)
@@ -244,12 +268,12 @@ class PsSocket:
         size = int(self.recv_str(target=target)[0].strip())
         c_size = 0
         with open(file_path, 'wb') as f:
-            while True:
-                msg = self.recv_bytes(target)
+            while c_size < size:
+                msg = self.recv_bytes(min(PsSocket._chunk, size - c_size), target)
                 c_size += len(msg)
+                self.service.log(0, '%d, %d, %d' % (size, len(msg), c_size), 'Debug' )
+                self.service.log(0, '%s' % msg, 'Debug' )
                 f.write(msg)
-                if c_size >= size:
-                    break
         
     def recv_files(self, file_dir, target:int=0):
         while True:
@@ -259,14 +283,14 @@ class PsSocket:
                 msg = rec_find[0]
                 if msg == 'files_start':
                     pass
-                elif msg.startswith('dir|'):
-                    t_path = os.path.join(file_dir, msg.split('|')[1])
+                elif msg.startswith('dir,'):
+                    t_path = os.path.join(file_dir, msg.split(',')[1])
                     if not os.path.isdir(t_path):
                         mkdir(t_path)
-                elif msg.startswith('file|'):
-                    t_path = os.path.join(file_dir, msg.split('|')[1])
+                elif msg.startswith('file,'):
+                    t_path = os.path.join(file_dir, msg.split(',')[1])
                     self.recv_file(t_path, target)
-                elif msg == 'files_end':
-                    break
                 else:
-                    raise socket.error
+                    break
+            else:
+                print(rec)

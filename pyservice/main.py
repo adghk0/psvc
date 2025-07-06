@@ -56,21 +56,23 @@ class Service:
 
         # Version Managing
         if self.config['PyService']['start_update'] == '1' and self.config[self.name]['update_failed'] == '0':
+            try:
+                result, version = self.command('ps check_update %s' % (self.name, ), True)
+                if result == None:
+                    self.log(Level.SYSTEM, '[%s] is a latest version (%s)' % (self.name, self.ps_version, ))
 
-            result, version = self.command('ps check_update %s' % (self.name, ), True)
-            if result == None:
-                self.log(Level.SYSTEM, '[%s] is a latest version (%s)' % (self.name, self.ps_version, ))
+                elif result == True:
+                    self.set_config(self.name, 'update_failed', 1)
+                    self.log(Level.SYSTEM, '[%s] is updating (%s)' % (self.name, self.ps_version))
+                    result = self.command('ps update %s %s' % (self.name, version), True)
+                    
+                    self.log(Level.SYSTEM, '[%s] is updated (%s)' % (self.name, version))
+                    self._restart()
 
-            elif result == True:
-                self.set_config(self.name, 'update_failed', 1)
-                self.log(Level.SYSTEM, '[%s] is updating (%s)' % (self.name, self.ps_version))
-                result = self.command('ps update %s %s' % (self.name, version), True)
-                
-                self.log(Level.SYSTEM, '[%s] is updated (%s)' % (self.name, version))
-                self._restart()
-
-            else:
-                self.log(Level.SYSTEM, '[%s] was not updated (%s)' % (self.name, self.ps_version, ))
+                else:
+                    self.log(Level.SYSTEM, '[%s] was not updated (%s)' % (self.name, self.ps_version, ))
+            except:
+                self.log_err('Update Failed')
 
         self._init_services()
 
