@@ -1,7 +1,7 @@
 
 import sys, time
 
-from pyservice import Service, ServerService
+from psvc import Service, ServerService
 
 config_file = './server.conf'
 
