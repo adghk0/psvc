@@ -10,9 +10,15 @@ authors = [
   { name="Eom Kyoungjun", email="adghk01234@gmail.com" }
 ]
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "BSD-3-Clause"
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/yourname/pyservice"
-Documentation = "https://github.com/yourname/pyservice"
+Homepage = "https://github.com/adghk0/psvc"
+Documentation = "https://github.com/adghk0/psvc"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
