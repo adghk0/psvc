@@ -22,7 +22,7 @@ class Level:
 class Logger:    
     def __init__(self, service, dir, level=Level.DEBUG, time_format='%Y-%m-%d %H:%M:%S.%f'):
         self.service = service
-        self.log_file = ps_path(self.service, self.service.log_path, self.service.name()+'.txt')
+        self.log_file = ps_path(self.service, self.service.log_path, self.service.name+'.txt')
         self.level = level
         self.dir = dir
         self.time_format = time_format
@@ -40,4 +40,4 @@ class Logger:
                 file = self.log_file
             else:
                 file = ps_path(self.service, self.service.log_path, file+'.txt')
-            self.log_raw('%s [%7s] %s\n' % (time, Level.INT[level], msg), file)
+            self.log_raw('%s [%7s] %10s %s\n' % (time, Level.INT[level], self.service.name, msg), file)

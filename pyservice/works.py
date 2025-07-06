@@ -2,10 +2,18 @@ from abc import ABCMeta, abstractmethod
 
 import os
 import time, traceback
+import re
+
+from configparser import ConfigParser
 
 from .file import ps_path, copy
 from .sockets import PsSocket
 from .log import Level
+
+_rollback_ignore = [
+    re.compile(r'(^|[/\\])\.[^/\\]+'),  # .으로 시작하는 파일/폴더
+    re.compile(r'(^|[/\\])log$'),       # log로 끝나는 파일/폴더
+]
 
 # Work
 # 서비스 명령어
@@ -70,14 +78,14 @@ class WorkExit (Work):
 class WorkCheckUpdate (Work):
     def exec(self, commander, param):
         service = commander.control.service
-        info = service.services[param[0]]
         result = (None, '')
         try:
             sock = PsSocket(service, name='UpdateSocket')
-            sock.connect(info[1], info[2])
-            sock.send_str('latest')
+            sock.connect(service.update_server, service.update_port)
+            sock.send_str('latest %s\n' % (param[0],) )
             latest = sock.recv_str()[0].strip()
-            if latest > info[0]:
+            commander.print(latest + '\r\n')
+            if latest.split('.') > service.ps_version.split('.'):
                 result = (True, latest)
             else:
                 result = (False, '')
@@ -93,13 +101,14 @@ class WorkCheckUpdate (Work):
 class WorkUpdate (Work):
     def exec(self, commander, param):
         service = commander.control.service
-        info = service.services[param[0]]
+        sock = None
         try:
-            copy(service.pgm_path, os.path.join(service.pgm_path, '.rollback'))
+            copy(service.root_path, os.path.join(service.root_path, '.rollback', service.name), _rollback_ignore)
             sock = PsSocket(service, name='UpdateSocket')
-            sock.connect(info[1], info[2])
-            sock.send_str('req %s' % param[1])
-            sock.recv_files(service.pgm_path)
+            sock.connect(service.update_server, service.update_port)
+            sock.send_str('req %s %s\n' % (param[0], param[1]))
+            sock.recv_files(service.root_path)
+
         except Exception as e:
             service.log_warn('Cannot update from update server (%s)' % (param[0],))
             service.log(Level.DEBUG, traceback.format_exc())

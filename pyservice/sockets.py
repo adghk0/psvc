@@ -20,7 +20,6 @@ class PsSocket:
         self.service.sockets[self.name] = self
         self.socket_worker = None
         self.clients = {}
-        self.client_cnt = 0
         self.role = None
 
         # Server
@@ -60,13 +59,22 @@ class PsSocket:
         if self.log:
             self.service.log(Level.DEBUG, '(%s) New Socket connecting to - (%s : %s)' % (self.name, addr, str(port)), file=self.name)
 
+    def _min_index(self):
+        result = None
+        cnt = 0
+        while result == None:
+            cnt += 1
+            if cnt not in self.clients:
+                result = cnt
+                break
+        return result
+
     # 쓰레드 동작
     def _server_work(self):
         while self.service.status not in self.dead_status and self.run_listen:
             try:
                 conn, addr = self.socket.accept()
-                self.client_cnt += 1
-                client_id = self.client_cnt
+                client_id = self._min_index()
                 client_name = self.name + '-Client-' + str(client_id)
                 client_worker = PsThread(self.service, client_name, target=self._recv_work, args=(client_id,))
                 self.clients[client_id] = [conn, b'', Lock()]
@@ -119,8 +127,8 @@ class PsSocket:
     def close_connection(self, id):
         if id in self.clients:
             conn = self.clients[id][0]
-            conn.close()
             del(self.clients[id])
+            conn.close()
             if self.log:
                 self.service.log(Level.DEBUG, '(%s) close a connection from %d' % (self.name, id), file=self.name)
 
@@ -174,7 +182,8 @@ class PsSocket:
 
     def send_files(self, file_dir: str, target:int, dir='', show_dir=''):
         file_dir = os.path.join(dir, file_dir)
-        self.send_str('|files_start|',target)
+        if show_dir == '':
+            self.send_str('|files_start|',target)
         if os.path.isdir(file_dir):
             _dir = file_dir
             _show_dir = os.path.join(show_dir, os.path.basename(file_dir))
@@ -184,7 +193,8 @@ class PsSocket:
                 self.send_files(f, target, _dir, _show_dir)
         else:
             self.send_file(os.path.join(dir, file_dir), target, dir, show_dir)
-        self.send_str('|files_end|',target)
+        if show_dir == '':
+            self.send_str('|files_end|',target)
 
     def recv_bytes(self, target:int=0):
         msg = self.clients[target][0].recv(PsSocket._chunk)
@@ -193,14 +203,18 @@ class PsSocket:
         
     def recv_str(self, max_length=0, until='\n', target=None, wait=True):
         result = (None, target)
+        recv_end = False
+
         if target == None:
-            for id, (conn, buf, buf_lock) in self.clients.items():
-                result = self.recv_str(max_length, until, target=id, wait=False)
-                if result[0] != None:
-                    break
+            while wait and not recv_end:
+                for id, (conn, buf, buf_lock) in self.clients.items():
+                    result = self.recv_str(max_length, until, target=id, wait=False)
+                    if result[0] != None:
+                        recv_end = True
+                time.sleep(0.1)
+        
         else:
-            recv_end = False
-            while recv_end:
+            while not recv_end:
                 if self.recv_available(target, until)[0] > 0:
                     conn, buf, buf_lock = self.clients[target]
                     with buf_lock:
@@ -218,13 +232,12 @@ class PsSocket:
                                 result = (msg, target)
                                 recv_end = True
                             else:
-                                pass
+                                time.sleep(0.1)
                 else:
                     if not wait:
                         recv_end = True
+                        result = (None, target)
 
-            else:
-                result = (None, target)
         return result
 
     def recv_file(self, file_path, target:int=0):
@@ -239,7 +252,6 @@ class PsSocket:
                     break
         
     def recv_files(self, file_dir, target:int=0):
-        file_dir = os.path.join(dir, file_dir)
         while True:
             rec = self.recv_str(target=target)[0].strip()
             rec_find = self._file_re.findall(rec)
@@ -247,11 +259,11 @@ class PsSocket:
                 msg = rec_find[0]
                 if msg == 'files_start':
                     pass
-                elif msg.startwith('dir|'):
+                elif msg.startswith('dir|'):
                     t_path = os.path.join(file_dir, msg.split('|')[1])
                     if not os.path.isdir(t_path):
                         mkdir(t_path)
-                elif msg.startwith('file|'):
+                elif msg.startswith('file|'):
                     t_path = os.path.join(file_dir, msg.split('|')[1])
                     self.recv_file(t_path, target)
                 elif msg == 'files_end':

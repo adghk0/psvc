@@ -17,7 +17,7 @@ class Commander (metaclass=ABCMeta):
         self.control = control
 
     def _show_ready(self):
-        self.print('\n[ %s ] $> ' % (self.control.service.name(),), end='')
+        self.print('\n[ %s ] $> ' % (self.control.service.name, ), end='')
 
     @abstractmethod
     def handle(self, cmd_str):
@@ -128,14 +128,25 @@ class Controller:
             self.commander_lock = Lock()
             self.commanders['Ps'] = CommanderService('Ps', self)
 
-            conf = self.service.config['PyService']
-            if int(conf['use_console']) == 1:
-                self.commanders['Commander-Console'] = CommanderConsole('Commander-Console', self)
-            if int(conf['use_socket']) == 1:
-                self.socket = PsSocket(self.service, 'Commander-Socket')
-                self.commanders['Commander-Socket'] = CommanderSocket('Commander-Socket', self, self.socket)
-                self.socket.set_connect_callback(self.commanders['Commander-Socket']._new_connection)
-                self.socket.bind(conf['cmd_address'], conf['cmd_port'])
+            conf = self.service.config[self.service.name]
+
+            # Console
+            if 'use_console' in conf and int(conf['use_console']) == 1:
+                n = '%s-Commander-Socket' % (self.service.name,)
+                self.commanders[n] = CommanderConsole(n, self)
+
+            # Socket
+            self.socket = PsSocket(self.service, 'Commander-Socket')
+            n = '%s-Commander-Socket' % (self.service.name,)
+            self.commanders[n] = CommanderSocket(n, self, self.socket)
+            self.socket.set_connect_callback(self.commanders[n]._new_connection)
+            if 'cmd_bind' not in conf:
+                bind_addr = '127.0.0.1'
+            else:
+                bind_addr = conf['cmd_bind']
+            self.service.log(Level.SYSTEM, '(%s) Command Port = %s' % (self.service.name, conf['cmd_port']))
+            self.socket.bind(bind_addr, conf['cmd_port'])
+
         else:
             self.works = {}
             self.commader_sig = signal.signal(signal.SIGTERM, self._handle)
@@ -215,7 +226,10 @@ class Controller:
     
     def command(self, commander, cmd_str: str): 
         cmds = [c.strip() for c in cmd_str.split(' ')]
-        self._command_result = self._command(commander, cmds, self.works)
+        try:
+            self._command_result = self._command(commander, cmds, self.works)
+        except:
+            self.service.log_err('Controller Execute Error')
         if self._command_result == None:
             self._command_result = 1
     
