@@ -4,21 +4,31 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "psvc"
-version = "0.1.0"
+version = "0.2.0"
 description = "Lightweight Python-based service management framework"
 authors = [
   { name="Eom Kyoungjun", email="adghk01234@gmail.com" }
 ]
 readme = "README.md"
-license = "BSD-3-Clause"
+license = { file = "LISENSE" }
 dependencies = []
 
 [project.urls]
 Homepage = "https://github.com/adghk0/psvc"
 Documentation = "https://github.com/adghk0/psvc"
 
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-mock"
+]
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

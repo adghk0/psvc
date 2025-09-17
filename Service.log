@@ -1,0 +1,674 @@
+PyService Start <Service> - None
+Status=Initting
+Status=Running
+KeyBoardInterrupt
+cancelled
+Status=Stopping
+Status=Stopped
+PyService Start <Service> - None
+Status=Initting
+Status=Running
+KeyBoardInterrupt
+cancelled
+Status=Stopping
+Status=Stopped
+PyService Start <Service> - None
+Status=Initting
+Status=Running
+KeyBoardInterrupt
+cancelled
+Status=Stopping
+Status=Stopped
+2025-09-17 21:58:02,181 : PyService [INFO] PyService Start <Service> - None
+2025-09-17 21:58:02,181 : PyService [INFO] PyService Start <Service> - None
+2025-09-17 21:58:02,181 : asyncio [DEBUG] Using proactor: IocpProactor
+2025-09-17 21:58:02,182 : PyService [INFO] Status=Initting
+2025-09-17 21:58:02,182 : PyService [INFO] Status=Initting
+2025-09-17 21:58:02,182 : PyService [INFO] Status=Running
+2025-09-17 21:58:02,182 : PyService [INFO] Status=Running
+2025-09-17 21:58:05,055 : PyService [INFO] KeyBoardInterrupt
+2025-09-17 21:58:05,055 : PyService [INFO] KeyBoardInterrupt
+2025-09-17 21:58:05,055 : PyService [ERROR] cancelled
+2025-09-17 21:58:05,055 : PyService [ERROR] cancelled
+2025-09-17 21:58:05,056 : PyService [INFO] Status=Stopping
+2025-09-17 21:58:05,056 : PyService [INFO] Status=Stopping
+2025-09-17 21:58:05,056 : PyService [INFO] Status=Stopped
+2025-09-17 21:58:05,056 : PyService [INFO] Status=Stopped
+2025-09-17 21:58:10,693 : PyService [INFO] PyService Start <Service> - None
+2025-09-17 21:58:10,693 : PyService [INFO] PyService Start <Service> - None
+2025-09-17 21:58:10,693 : asyncio [DEBUG] Using proactor: IocpProactor
+2025-09-17 21:58:10,694 : PyService [INFO] Status=Initting
+2025-09-17 21:58:10,694 : PyService [INFO] Status=Initting
+2025-09-17 21:58:10,694 : PyService [INFO] Status=Running
+2025-09-17 21:58:10,694 : PyService [INFO] Status=Running
+2025-09-17 21:58:12,270 : PyService [INFO] KeyBoardInterrupt
+2025-09-17 21:58:12,270 : PyService [INFO] KeyBoardInterrupt
+2025-09-17 21:58:12,270 : PyService [ERROR] cancelled
+2025-09-17 21:58:12,270 : PyService [ERROR] cancelled
+2025-09-17 21:58:12,270 : PyService [INFO] Status=Stopping
+2025-09-17 21:58:12,270 : PyService [INFO] Status=Stopping
+2025-09-17 21:58:12,270 : PyService [INFO] Status=Stopped
+2025-09-17 21:58:12,270 : PyService [INFO] Status=Stopped
+PyService Start <Service> - None
+PyService Start <Service> - None
+PyService Start <Service> - None
+PyService Start <Service> - None
+Status=Initting
+Status=Running
+KeyBoardInterrupt
+cancelled
+Status=Stopping
+Status=Stopped
+PyService Start <Service> - None
+Status=Initting
+Status=Running
+KeyBoardInterrupt
+cancelled
+Status=Stopping
+Status=Stopped
+%(asctime)s : %(name)s [%(levelname)s] %(message)s
+%(asctime)s : %(name)s [%(levelname)s] %(message)s
+%(asctime)s : %(name)s [%(levelname)s] %(message)s
+%(asctime)s : %(name)s [%(levelname)s] %(message)s
+%(asctime)s : %(name)s [%(levelname)s] %(message)s
+%(asctime)s : %(name)s [%(levelname)s] %(message)s
+%(asctime)s : %(name)s [%(levelname)s] %(message)s
+2025-09-17 22:11:17,011 : PyService [INFO] PyService Start <Service> - None
+2025-09-17 22:11:17,011 : PyService [INFO] Status=Initting
+2025-09-17 22:11:17,012 : PyService [INFO] Status=Running
+2025-09-17 22:11:22,594 : PyService [INFO] KeyBoardInterrupt
+2025-09-17 22:11:22,594 : PyService [ERROR] cancelled
+2025-09-17 22:11:22,594 : PyService [INFO] Status=Stopping
+2025-09-17 22:11:22,594 : PyService [INFO] Status=Stopped
+2025-09-17 22:12:45,014 : PyService [INFO] PyService Start <Service> - None
+2025-09-17 22:12:45,015 : PyService [INFO] Status=Initting
+2025-09-17 22:12:45,015 : PyService [INFO] Status=Running
+2025-09-17 22:12:51,559 : PyService [INFO] KeyBoardInterrupt
+2025-09-17 22:12:51,560 : PyService [ERROR] cancelled
+2025-09-17 22:12:51,560 : PyService [INFO] Status=Stopping
+2025-09-17 22:12:51,560 : PyService [INFO] Status=Stopped
+2025-09-17 22:12:56,935 : PyService [INFO] PyService Start <Service> - None
+2025-09-17 22:12:56,936 : PyService [INFO] Status=Initting
+2025-09-17 22:12:56,937 : PyService [INFO] Status=Running
+2025-09-17 22:14:33,194 : PyService [INFO] PyService Start <Service> - None
+2025-09-17 22:14:33,195 : PyService [INFO] Status=Initting
+2025-09-17 22:14:33,195 : PyService [INFO] Status=Running
+2025-09-17 22:14:55,695 : PyService [INFO] PyService Start <Service> - None
+2025-09-17 22:14:55,696 : PyService [INFO] Status=Initting
+2025-09-17 22:14:55,696 : PyService [INFO] Status=Running
+2025-09-17 22:14:57,774 : PyService [INFO] KeyBoardInterrupt
+2025-09-17 22:14:57,774 : PyService [ERROR] cancelled
+2025-09-17 22:14:57,774 : PyService [INFO] Status=Stopping
+2025-09-17 22:14:57,774 : PyService [INFO] Status=Stopped
+2025-09-17 22:26:52,917 : PyService [INFO] PyService Start <Service> - None
+2025-09-17 22:26:52,918 : PyService [INFO] Status=Initting
+2025-09-17 22:26:52,918 : PyService [INFO] Status=Running
+2025-09-17 22:26:54,498 : PyService [INFO] KeyBoardInterrupt
+2025-09-17 22:26:54,498 : PyService [ERROR] cancelled
+2025-09-17 22:26:54,498 : PyService [INFO] Status=Stopping
+2025-09-17 22:26:54,498 : PyService [INFO] Status=Stopped
+2025-09-17 22:26:56,414 : PyService [INFO] PyService Start <Service> - None
+2025-09-17 22:26:56,415 : PyService [INFO] Status=Initting
+2025-09-17 22:26:56,415 : PyService [INFO] Status=Running
+2025-09-17 22:27:02,457 : PyService [INFO] PyService Start <Service> - None
+2025-09-17 22:27:02,457 : PyService [INFO] Status=Initting
+2025-09-17 22:27:02,457 : PyService [INFO] Status=Running
+2025-09-17 22:27:03,685 : PyService [INFO] KeyBoardInterrupt
+2025-09-17 22:27:03,685 : PyService [ERROR] cancelled
+2025-09-17 22:27:03,685 : PyService [INFO] Status=Stopping
+2025-09-17 22:27:03,685 : PyService [INFO] Status=Stopped
+2025-09-17 22:27:14,732 : PyService [INFO] PyService Start <Service> - None
+2025-09-17 22:27:14,733 : PyService [INFO] Status=Initting
+2025-09-17 22:27:14,733 : PyService [INFO] Status=Running
+2025-09-17 22:27:15,881 : PyService [INFO] KeyBoardInterrupt
+2025-09-17 22:27:15,881 : PyService [ERROR] cancelled
+2025-09-17 22:27:15,881 : PyService [INFO] Status=Stopping
+2025-09-17 22:27:15,881 : PyService [INFO] Status=Stopped
+2025-09-17 22:47:40,135 : PyService [INFO] PyService Start <Service> - None
+2025-09-17 22:47:40,135 : PyService [INFO] Status=Initting
+2025-09-17 22:47:40,136 : PyService [INFO] Status=Running
+2025-09-17 22:47:40,142 : PyService [ERROR] Traceback (most recent call last):
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 104, in _service
+    await self.run()
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 177, in run
+    await sock.server_join()
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 139, in server_join
+    await self.server.serve_forever()
+AttributeError: 'Socket' object has no attribute 'server'
+
+2025-09-17 22:47:40,142 : PyService [INFO] Status=Stopping
+2025-09-17 22:47:40,142 : PyService [INFO] Status=Stopped
+2025-09-17 22:47:55,555 : PyService [INFO] PyService Start <Service> - None
+2025-09-17 22:47:55,555 : PyService [INFO] Status=Initting
+2025-09-17 22:47:55,555 : PyService [INFO] Status=Running
+2025-09-17 22:47:55,556 : PyService [ERROR] Traceback (most recent call last):
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 104, in _service
+    await self.run()
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 176, in run
+    await sock.bind('0.0.0.0', 60620)
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 136, in bind
+    self.svc.append_task(self._serv)
+TypeError: append_task() missing 2 required positional arguments: 'coro' and 'name'
+
+2025-09-17 22:47:55,556 : PyService [INFO] Status=Stopping
+2025-09-17 22:47:55,557 : PyService [INFO] Status=Stopped
+2025-09-17 22:48:03,809 : PyService [INFO] PyService Start <Service> - None
+2025-09-17 22:48:03,810 : PyService [INFO] Status=Initting
+2025-09-17 22:48:03,811 : PyService [INFO] Status=Running
+2025-09-17 22:48:03,812 : PyService [ERROR] Traceback (most recent call last):
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 104, in _service
+    await self.run()
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 176, in run
+    await sock.bind('0.0.0.0', 60620)
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 136, in bind
+    self.svc.append_task(self._serv)
+TypeError: append_task() missing 2 required positional arguments: 'coro' and 'name'
+
+2025-09-17 22:48:03,812 : PyService [INFO] Status=Stopping
+2025-09-17 22:48:03,812 : PyService [INFO] Status=Stopped
+2025-09-17 22:48:55,969 : PyService [INFO] PyService Start <Service> - None
+2025-09-17 22:48:55,970 : PyService [INFO] Status=Initting
+2025-09-17 22:48:55,970 : PyService [INFO] Status=Running
+2025-09-17 22:48:55,972 : PyService [ERROR] Traceback (most recent call last):
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 104, in _service
+    await self.run()
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 176, in run
+    await sock.bind('0.0.0.0', 60620)
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 136, in bind
+    self.svc.append_task(asyncio.get_running_loop(), self._serv, self.name)
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 44, in append_task
+    task = loop.create_task(coro, name=name)
+  File "c:\Programs\Python\Python3_8_10_x32\lib\asyncio\base_events.py", line 431, in create_task
+    task = tasks.Task(coro, loop=self, name=name)
+TypeError: a coroutine was expected, got <bound method Socket._serv of <__main__.Socket object at 0x040C3B50>>
+
+2025-09-17 22:48:55,972 : PyService [INFO] Status=Stopping
+2025-09-17 22:48:55,972 : PyService [INFO] Status=Stopped
+2025-09-17 22:49:13,432 : PyService [INFO] PyService Start <Service> - None
+2025-09-17 22:49:13,433 : PyService [INFO] Status=Initting
+2025-09-17 22:49:13,433 : PyService [INFO] Status=Running
+2025-09-17 22:49:13,434 : PyService [ERROR] cancelled
+2025-09-17 22:49:13,434 : PyService [INFO] Status=Stopping
+2025-09-17 22:49:13,434 : PyService [INFO] Status=Stopped
+2025-09-17 22:50:11,555 : PyService [INFO] PyService Start <Service> - None - 76
+2025-09-17 22:50:11,555 : PyService [INFO] Status=Initting - 60
+2025-09-17 22:50:11,555 : PyService [INFO] Status=Running - 60
+2025-09-17 22:50:11,556 : PyService [ERROR] cancelled - 106
+2025-09-17 22:50:11,556 : PyService [INFO] Status=Stopping - 60
+2025-09-17 22:50:11,556 : PyService [INFO] Status=Stopped - 60
+2025-09-17 22:53:50,583 : PyService [INFO] PyService Start <Service> - None - 76
+2025-09-17 22:53:50,584 : PyService [INFO] Status=Initting - 60
+2025-09-17 22:53:50,584 : PyService [INFO] Status=Running - 60
+2025-09-17 22:53:50,585 : PyService [ERROR] cancelled - 106
+2025-09-17 22:53:50,585 : PyService [INFO] Status=Stopping - 60
+2025-09-17 22:53:50,585 : PyService [INFO] Status=Stopped - 60
+2025-09-17 22:54:03,283 : PyService [INFO] PyService Start <Service> - None - 76
+2025-09-17 22:54:03,284 : PyService [INFO] Status=Initting - 60
+2025-09-17 22:54:03,284 : PyService [INFO] Status=Running - 60
+2025-09-17 22:54:03,296 : PyService [ERROR] Traceback (most recent call last):
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 104, in _service
+    await self.run()
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 177, in run
+    await self.sigterm.wait()
+  File "c:\Programs\Python\Python3_8_10_x32\lib\asyncio\locks.py", line 309, in wait
+    await fut
+RuntimeError: Task <Task pending name='ServiceWork' coro=<Service._service() running at d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py:104> cb=[gather.<locals>._done_callback() at c:\Programs\Python\Python3_8_10_x32\lib\asyncio\tasks.py:769]> got Future <Future pending> attached to a different loop
+ - 108
+2025-09-17 22:54:03,297 : PyService [INFO] Status=Stopping - 60
+2025-09-17 22:54:03,297 : PyService [INFO] Status=Stopped - 60
+2025-09-17 22:55:41,908 : PyService [INFO] PyService Start <Service> - None - 76
+2025-09-17 22:55:41,909 : PyService [INFO] Status=Initting - 60
+2025-09-17 22:55:41,909 : PyService [INFO] Status=Running - 60
+2025-09-17 22:55:41,910 : PyService [ERROR] Traceback (most recent call last):
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 104, in _service
+    await self.run()
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 177, in run
+    await self.sigterm.wait()
+  File "c:\Programs\Python\Python3_8_10_x32\lib\asyncio\locks.py", line 309, in wait
+    await fut
+RuntimeError: Task <Task pending name='ServiceWork' coro=<Service._service() running at d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py:104> cb=[gather.<locals>._done_callback() at c:\Programs\Python\Python3_8_10_x32\lib\asyncio\tasks.py:769]> got Future <Future pending> attached to a different loop
+ - 108
+2025-09-17 22:55:41,910 : PyService [INFO] Status=Stopping - 60
+2025-09-17 22:55:41,910 : PyService [INFO] Status=Stopped - 60
+2025-09-17 22:56:53,167 : PyService [INFO] PyService Start <Service> - None - 76
+2025-09-17 22:56:53,167 : PyService [INFO] Status=Initting - 60
+2025-09-17 22:56:53,167 : PyService [INFO] Status=Running - 60
+2025-09-17 23:00:32,227 : PyService [INFO] Stopping by KeyBoardInterrupt - 86
+2025-09-17 23:00:32,227 : PyService [ERROR] cancelled - 106
+2025-09-17 23:00:32,227 : PyService [INFO] Status=Stopping - 60
+2025-09-17 23:00:32,227 : PyService [INFO] Status=Stopped - 60
+2025-09-17 23:00:34,450 : PyService [INFO] PyService Start <Service> - None - 76
+2025-09-17 23:00:34,450 : PyService [INFO] Status=Initting - 60
+2025-09-17 23:00:34,450 : PyService [INFO] Status=Running - 60
+2025-09-17 23:42:40,909 : PyService [INFO] Stopping by KeyBoardInterrupt - 86
+2025-09-17 23:42:40,909 : PyService [ERROR] cancelled - 106
+2025-09-17 23:42:40,909 : PyService [INFO] Status=Stopping - 60
+2025-09-17 23:42:40,910 : PyService [INFO] Status=Stopped - 60
+2025-09-17 23:43:03,177 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-17 23:43:03,178 : PyService [INFO] Status=Initting - 63
+2025-09-17 23:43:03,178 : PyService [INFO] Status=Running - 63
+2025-09-17 23:43:13,665 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-17 23:43:13,665 : PyService [INFO] Status=Initting - 63
+2025-09-17 23:43:13,665 : PyService [INFO] Status=Running - 63
+2025-09-17 23:43:13,669 : PyService [ERROR] Traceback (most recent call last):
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 107, in _service
+    await self.run()
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 228, in run
+    await sock.connect('127.0.0.1', 60620)
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 161, in connect
+    r, w = asyncio.open_connection(addr, port)
+TypeError: cannot unpack non-iterable coroutine object
+ - 112
+2025-09-17 23:43:13,669 : PyService [INFO] Status=Stopping - 63
+2025-09-17 23:43:13,671 : PyService [INFO] Status=Stopped - 63
+2025-09-17 23:43:31,671 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-17 23:43:31,672 : PyService [INFO] Status=Initting - 63
+2025-09-17 23:43:31,672 : PyService [INFO] Status=Running - 63
+2025-09-17 23:43:31,678 : PyService [ERROR] Traceback (most recent call last):
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 107, in _service
+    await self.run()
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 228, in run
+    await sock.connect('127.0.0.1', 60620)
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 162, in connect
+    self.svc.append_task(self._handler(r, w))
+TypeError: append_task() missing 2 required positional arguments: 'coro' and 'name'
+ - 112
+2025-09-17 23:43:31,678 : PyService [INFO] Status=Stopping - 63
+2025-09-17 23:43:31,678 : PyService [INFO] Status=Stopped - 63
+2025-09-17 23:43:41,099 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-17 23:43:41,100 : PyService [INFO] Status=Initting - 63
+2025-09-17 23:43:41,100 : PyService [INFO] Status=Running - 63
+2025-09-17 23:43:41,105 : PyService [ERROR] Traceback (most recent call last):
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 107, in _service
+    await self.run()
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 228, in run
+    await sock.connect('127.0.0.1', 60620)
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 162, in connect
+    self.svc.append_task(self._handler(r, w))
+TypeError: append_task() missing 2 required positional arguments: 'coro' and 'name'
+ - 112
+2025-09-17 23:43:41,105 : PyService [INFO] Status=Stopping - 63
+2025-09-17 23:43:41,105 : PyService [INFO] Status=Stopped - 63
+2025-09-17 23:44:32,834 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-17 23:44:32,834 : PyService [INFO] Status=Initting - 63
+2025-09-17 23:44:32,835 : PyService [INFO] Status=Running - 63
+2025-09-17 23:44:34,481 : PyService [INFO] Recv asda
+ - 232
+2025-09-17 23:45:46,012 : PyService [INFO] Recv asdasd
+ - 232
+2025-09-17 23:45:47,003 : PyService [INFO] Recv asdasda
+ - 232
+2025-09-17 23:45:48,443 : PyService [INFO] Recv asdasddddda
+ - 232
+2025-09-17 23:45:50,249 : PyService [INFO] Recv sdasdasdasdasdasdasd
+ - 232
+2025-09-17 23:45:54,563 : PyService [INFO] Recv qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq
+ - 232
+2025-09-17 23:48:48,342 : PyService [INFO] Stopping by KeyBoardInterrupt - 89
+2025-09-17 23:48:48,342 : PyService [ERROR] Service Cancelled - 110
+2025-09-17 23:48:48,342 : PyService [INFO] Status=Stopping - 63
+2025-09-17 23:48:48,343 : PyService [INFO] Status=Stopped - 63
+2025-09-17 23:48:50,516 : PyService [INFO] Recv sad
+ - 232
+2025-09-17 23:48:51,425 : PyService [INFO] Recv 
+ - 232
+2025-09-17 23:48:51,589 : PyService [INFO] Recv 
+ - 232
+2025-09-17 23:48:52,256 : PyService [INFO] Recv as
+ - 232
+2025-09-17 23:48:52,489 : PyService [INFO] Recv s
+ - 232
+2025-09-17 23:48:52,669 : PyService [INFO] Recv s
+ - 232
+2025-09-17 23:48:52,834 : PyService [INFO] Recv s
+ - 232
+2025-09-17 23:48:52,999 : PyService [INFO] Recv s
+ - 232
+2025-09-17 23:48:53,173 : PyService [INFO] Recv s
+ - 232
+2025-09-17 23:48:53,345 : PyService [INFO] Recv s
+ - 232
+2025-09-17 23:48:53,517 : PyService [INFO] Recv s
+ - 232
+2025-09-17 23:48:53,689 : PyService [INFO] Recv s
+ - 232
+2025-09-17 23:48:53,869 : PyService [INFO] Recv s
+ - 232
+2025-09-17 23:48:54,035 : PyService [INFO] Recv s
+ - 232
+2025-09-17 23:48:54,214 : PyService [INFO] Recv s
+ - 232
+2025-09-17 23:48:54,375 : PyService [INFO] Recv s
+ - 232
+2025-09-17 23:49:02,330 : PyService [INFO] Stopping by KeyBoardInterrupt - 89
+2025-09-17 23:49:02,331 : PyService [ERROR] Service Cancelled - 110
+2025-09-17 23:49:02,331 : PyService [INFO] Status=Stopping - 63
+2025-09-17 23:49:02,331 : PyService [INFO] Status=Stopped - 63
+2025-09-17 23:49:06,418 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-17 23:49:06,418 : PyService [INFO] Status=Initting - 63
+2025-09-17 23:49:06,418 : PyService [INFO] Status=Running - 63
+2025-09-17 23:49:09,421 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-17 23:49:09,421 : PyService [INFO] Status=Initting - 63
+2025-09-17 23:49:09,421 : PyService [INFO] Status=Running - 63
+2025-09-17 23:49:10,880 : PyService [ERROR] Traceback (most recent call last):
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 107, in _service
+    await self.run()
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 232, in run
+    await sock.send(sock)
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 209, in send
+    await self._send(msg, cid)
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 194, in _send
+    while len(msg) > 0:
+TypeError: object of type 'Socket' has no len()
+ - 112
+2025-09-17 23:49:10,880 : PyService [INFO] Status=Stopping - 63
+2025-09-17 23:49:10,880 : PyService [INFO] Status=Stopped - 63
+2025-09-17 23:49:26,548 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-17 23:49:26,548 : PyService [INFO] Status=Initting - 63
+2025-09-17 23:49:26,548 : PyService [INFO] Status=Running - 63
+2025-09-17 23:49:27,852 : PyService [ERROR] Traceback (most recent call last):
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 107, in _service
+    await self.run()
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 232, in run
+    await sock.send(sock)
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 209, in send
+    await self._send(msg, cid)
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 194, in _send
+    while len(msg) > 0:
+TypeError: object of type 'Socket' has no len()
+ - 112
+2025-09-17 23:49:27,852 : PyService [INFO] Status=Stopping - 63
+2025-09-17 23:49:27,852 : PyService [INFO] Status=Stopped - 63
+2025-09-17 23:50:10,702 : PyService [INFO] Stopping by KeyBoardInterrupt - 89
+2025-09-17 23:50:10,702 : PyService [ERROR] Service Cancelled - 110
+2025-09-17 23:50:10,703 : PyService [INFO] Status=Stopping - 63
+2025-09-17 23:50:10,703 : PyService [INFO] Status=Stopped - 63
+2025-09-17 23:50:16,681 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-17 23:50:16,681 : PyService [INFO] Status=Initting - 63
+2025-09-17 23:50:16,681 : PyService [INFO] Status=Running - 63
+2025-09-17 23:50:18,285 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-17 23:50:18,286 : PyService [INFO] Status=Initting - 63
+2025-09-17 23:50:18,286 : PyService [INFO] Status=Running - 63
+2025-09-17 23:50:19,479 : PyService [ERROR] Traceback (most recent call last):
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 107, in _service
+    await self.run()
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 232, in run
+    await sock.send(msg)
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 209, in send
+    await self._send(msg, cid)
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 203, in _send
+    writer.write(buf)
+  File "c:\Programs\Python\Python3_8_10_x32\lib\asyncio\streams.py", line 341, in write
+    self._transport.write(data)
+  File "c:\Programs\Python\Python3_8_10_x32\lib\asyncio\proactor_events.py", line 333, in write
+    raise TypeError(
+TypeError: data argument must be a bytes-like object, not str
+ - 112
+2025-09-17 23:50:19,479 : PyService [INFO] Status=Stopping - 63
+2025-09-17 23:50:19,479 : PyService [INFO] Status=Stopped - 63
+2025-09-17 23:51:10,434 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-17 23:51:10,434 : PyService [INFO] Status=Initting - 63
+2025-09-17 23:51:10,436 : PyService [INFO] Status=Running - 63
+2025-09-17 23:51:11,132 : PyService [ERROR] Traceback (most recent call last):
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 107, in _service
+    await self.run()
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 232, in run
+    await sock.send(bytes(msg))
+TypeError: string argument without an encoding
+ - 112
+2025-09-17 23:51:11,132 : PyService [INFO] Status=Stopping - 63
+2025-09-17 23:51:11,132 : PyService [INFO] Status=Stopped - 63
+2025-09-17 23:52:18,282 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-17 23:52:18,283 : PyService [INFO] Status=Initting - 63
+2025-09-17 23:52:18,283 : PyService [INFO] Status=Running - 63
+2025-09-17 23:52:30,043 : PyService [ERROR] Traceback (most recent call last):
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 107, in _service
+    await self.run()
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 232, in run
+    id, rcv = await sock.send(msg.encode())
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 209, in send
+    await self._send(msg, cid)
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 204, in _send
+    await writer.drain()
+  File "c:\Programs\Python\Python3_8_10_x32\lib\asyncio\streams.py", line 387, in drain
+    await self._protocol._drain_helper()
+  File "c:\Programs\Python\Python3_8_10_x32\lib\asyncio\streams.py", line 190, in _drain_helper
+    raise ConnectionResetError('Connection lost')
+ConnectionResetError: Connection lost
+ - 112
+2025-09-17 23:52:30,043 : PyService [INFO] Status=Stopping - 63
+2025-09-17 23:52:30,043 : PyService [INFO] Status=Stopped - 63
+2025-09-17 23:52:30,044 : PyService [INFO] Stopping by KeyBoardInterrupt - 89
+2025-09-17 23:52:30,075 : PyService [INFO] Status=Stopping - 63
+2025-09-17 23:52:30,075 : PyService [INFO] Status=Stopped - 63
+2025-09-17 23:52:42,883 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-17 23:52:42,884 : PyService [INFO] Status=Initting - 63
+2025-09-17 23:52:42,884 : PyService [INFO] Status=Running - 63
+2025-09-17 23:52:45,448 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-17 23:52:45,448 : PyService [INFO] Status=Initting - 63
+2025-09-17 23:52:45,448 : PyService [INFO] Status=Running - 63
+2025-09-17 23:52:51,581 : PyService [INFO] Status=Stopping - 63
+2025-09-17 23:52:51,581 : PyService [INFO] Status=Stopped - 63
+2025-09-17 23:52:51,581 : PyService [INFO] Stopping by KeyBoardInterrupt - 89
+2025-09-17 23:52:51,598 : PyService [ERROR] Traceback (most recent call last):
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 107, in _service
+    await self.run()
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 218, in run
+    await sock.send(msg, cid)
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 209, in send
+    await self._send(msg, cid)
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 204, in _send
+    await writer.drain()
+  File "c:\Programs\Python\Python3_8_10_x32\lib\asyncio\streams.py", line 387, in drain
+    await self._protocol._drain_helper()
+  File "c:\Programs\Python\Python3_8_10_x32\lib\asyncio\streams.py", line 190, in _drain_helper
+    raise ConnectionResetError('Connection lost')
+ConnectionResetError: Connection lost
+ - 112
+2025-09-17 23:52:51,598 : PyService [INFO] Status=Stopping - 63
+2025-09-17 23:52:51,598 : PyService [INFO] Status=Stopped - 63
+2025-09-17 23:54:01,576 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-17 23:54:01,576 : PyService [INFO] Status=Initting - 63
+2025-09-17 23:54:01,576 : PyService [INFO] Status=Running - 63
+2025-09-17 23:54:03,345 : PyService [INFO] Stopping by KeyBoardInterrupt - 89
+2025-09-17 23:54:03,345 : PyService [ERROR] Service Cancelled - 110
+2025-09-17 23:54:03,345 : PyService [INFO] Status=Stopping - 63
+2025-09-17 23:54:03,345 : PyService [INFO] Status=Stopped - 63
+2025-09-17 23:54:05,640 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-17 23:54:05,641 : PyService [INFO] Status=Initting - 63
+2025-09-17 23:54:05,641 : PyService [INFO] Status=Running - 63
+2025-09-17 23:54:08,752 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-17 23:54:08,753 : PyService [INFO] Status=Initting - 63
+2025-09-17 23:54:08,753 : PyService [INFO] Status=Running - 63
+2025-09-17 23:54:13,004 : PyService [INFO] Stopping by KeyBoardInterrupt - 89
+2025-09-17 23:54:13,004 : PyService [ERROR] Service Cancelled - 110
+2025-09-17 23:54:13,005 : PyService [INFO] Status=Stopping - 63
+2025-09-17 23:54:13,005 : PyService [INFO] Status=Stopped - 63
+2025-09-17 23:54:13,016 : PyService [ERROR] Traceback (most recent call last):
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 107, in _service
+    await self.run()
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 232, in run
+    await sock.send(msg.encode())
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 209, in send
+    await self._send(msg, cid)
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 204, in _send
+    await writer.drain()
+  File "c:\Programs\Python\Python3_8_10_x32\lib\asyncio\streams.py", line 387, in drain
+    await self._protocol._drain_helper()
+  File "c:\Programs\Python\Python3_8_10_x32\lib\asyncio\streams.py", line 190, in _drain_helper
+    raise ConnectionResetError('Connection lost')
+ConnectionResetError: Connection lost
+ - 112
+2025-09-17 23:54:13,016 : PyService [INFO] Status=Stopping - 63
+2025-09-17 23:54:13,016 : PyService [INFO] Status=Stopped - 63
+2025-09-17 23:54:36,099 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-17 23:54:36,099 : PyService [INFO] Status=Initting - 63
+2025-09-17 23:54:36,099 : PyService [INFO] Status=Running - 63
+2025-09-17 23:54:38,273 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-17 23:54:38,274 : PyService [INFO] Status=Initting - 63
+2025-09-17 23:54:38,274 : PyService [INFO] Status=Running - 63
+2025-09-17 23:54:42,262 : PyService [INFO] Status=Stopping - 63
+2025-09-17 23:54:42,262 : PyService [INFO] Status=Stopped - 63
+2025-09-17 23:54:42,263 : PyService [INFO] Stopping by KeyBoardInterrupt - 89
+2025-09-17 23:54:42,269 : PyService [ERROR] Traceback (most recent call last):
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 107, in _service
+    await self.run()
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 218, in run
+    await sock.send(msg, cid)
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 209, in send
+    await self._send(msg, cid)
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 204, in _send
+    await writer.drain()
+  File "c:\Programs\Python\Python3_8_10_x32\lib\asyncio\streams.py", line 387, in drain
+    await self._protocol._drain_helper()
+  File "c:\Programs\Python\Python3_8_10_x32\lib\asyncio\streams.py", line 190, in _drain_helper
+    raise ConnectionResetError('Connection lost')
+ConnectionResetError: Connection lost
+ - 112
+2025-09-17 23:54:42,269 : PyService [INFO] Status=Stopping - 63
+2025-09-17 23:54:42,269 : PyService [INFO] Status=Stopped - 63
+2025-09-17 23:56:19,301 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-17 23:56:19,301 : PyService [INFO] Status=Initting - 63
+2025-09-17 23:56:19,301 : PyService [INFO] Status=Running - 63
+2025-09-17 23:56:22,374 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-17 23:56:22,374 : PyService [INFO] Status=Initting - 63
+2025-09-17 23:56:22,376 : PyService [INFO] Status=Running - 63
+2025-09-17 23:56:22,938 : PyService [INFO] Recv 1 b'asda' - 235
+2025-09-17 23:56:23,972 : PyService [INFO] Recv 1 b'asdasd' - 235
+2025-09-17 23:56:24,924 : PyService [INFO] Recv 1 b'asdasdas' - 235
+2025-09-17 23:56:53,706 : PyService [INFO] Status=Stopping - 63
+2025-09-17 23:56:53,706 : PyService [INFO] Status=Stopped - 63
+2025-09-18 00:02:57,253 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-18 00:02:57,254 : PyService [INFO] Status=Initting - 63
+2025-09-18 00:02:57,254 : PyService [INFO] Status=Running - 63
+2025-09-18 00:03:01,011 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-18 00:03:01,012 : PyService [INFO] Status=Initting - 63
+2025-09-18 00:03:01,012 : PyService [INFO] Status=Running - 63
+2025-09-18 00:03:01,777 : PyService [ERROR] Traceback (most recent call last):
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 107, in _service
+    await self.run()
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 229, in run
+    await sock.send(msg.encode())
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 207, in send
+    await self._send(msg, cid)
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 202, in _send
+    i += buf
+TypeError: unsupported operand type(s) for +=: 'int' and 'memoryview'
+ - 112
+2025-09-18 00:03:01,777 : PyService [INFO] Status=Stopping - 63
+2025-09-18 00:03:01,777 : PyService [INFO] Status=Stopped - 63
+2025-09-18 00:03:01,778 : PyService [ERROR] Traceback (most recent call last):
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 107, in _service
+    await self.run()
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 215, in run
+    await sock.send(msg, cid)
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 207, in send
+    await self._send(msg, cid)
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 202, in _send
+    i += buf
+TypeError: unsupported operand type(s) for +=: 'int' and 'memoryview'
+ - 112
+2025-09-18 00:03:01,778 : PyService [INFO] Status=Stopping - 63
+2025-09-18 00:03:01,778 : PyService [INFO] Status=Stopped - 63
+2025-09-18 00:03:14,384 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-18 00:03:14,384 : PyService [INFO] Status=Initting - 63
+2025-09-18 00:03:14,384 : PyService [INFO] Status=Running - 63
+2025-09-18 00:03:15,959 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-18 00:03:15,959 : PyService [INFO] Status=Initting - 63
+2025-09-18 00:03:15,959 : PyService [INFO] Status=Running - 63
+2025-09-18 00:03:16,716 : PyService [INFO] Recv 1 b'asdad' - 231
+2025-09-18 00:03:17,518 : PyService [INFO] Recv 1 b'asdasdsa' - 231
+2025-09-18 00:03:18,779 : PyService [INFO] Recv 1 b'dasdsadasdasd' - 231
+2025-09-18 00:03:20,054 : PyService [INFO] Recv 1 b'asdasdasdasd' - 231
+2025-09-18 00:03:21,044 : PyService [INFO] Recv 1 b'adssadasdas' - 231
+2025-09-18 00:03:21,344 : PyService [INFO] Recv 1 b'dasd' - 231
+2025-09-18 00:03:21,524 : PyService [INFO] Recv 1 b'sa' - 231
+2025-09-18 00:03:21,681 : PyService [INFO] Recv 1 b'd' - 231
+2025-09-18 00:03:21,824 : PyService [INFO] Recv 1 b'a' - 231
+2025-09-18 00:03:21,974 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:03:22,116 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:03:22,259 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:03:22,386 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:03:22,536 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:03:22,664 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:03:51,592 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-18 00:03:51,593 : PyService [INFO] Status=Initting - 63
+2025-09-18 00:03:51,593 : PyService [INFO] Status=Running - 63
+2025-09-18 00:04:08,414 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-18 00:04:08,414 : PyService [INFO] Status=Initting - 63
+2025-09-18 00:04:08,414 : PyService [INFO] Status=Running - 63
+2025-09-18 00:04:12,817 : PyService [INFO] Stopping by KeyBoardInterrupt - 89
+2025-09-18 00:04:12,818 : PyService [ERROR] Service Cancelled - 110
+2025-09-18 00:04:12,818 : PyService [INFO] Status=Stopping - 63
+2025-09-18 00:04:12,818 : PyService [INFO] Status=Stopped - 63
+2025-09-18 00:04:18,226 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-18 00:04:18,227 : PyService [INFO] Status=Initting - 63
+2025-09-18 00:04:18,227 : PyService [INFO] Status=Running - 63
+2025-09-18 00:04:19,462 : PyService [INFO] Recv 1 b'sdd' - 231
+2025-09-18 00:04:20,363 : PyService [INFO] Recv 1 b'asd' - 231
+2025-09-18 00:04:21,135 : PyService [INFO] Recv 1 b'asd' - 231
+2025-09-18 00:04:21,659 : PyService [INFO] Recv 1 b'a' - 231
+2025-09-18 00:04:22,208 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:22,523 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:22,807 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:23,093 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:23,302 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:23,498 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:23,707 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:23,903 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:24,090 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:24,285 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:24,443 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:24,615 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:24,780 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:24,967 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:25,124 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:25,320 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:25,508 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:25,680 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:25,853 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:26,033 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:26,205 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:26,384 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:26,565 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:26,745 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:26,940 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:27,149 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:27,345 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:27,548 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:27,749 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:27,953 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:28,125 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:28,290 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:28,470 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:28,680 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:28,859 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:29,069 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:29,279 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:29,490 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:29,678 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:04:29,873 : PyService [INFO] Recv 1 b's' - 231
+2025-09-18 00:05:56,199 : PyService [INFO] Stopping by KeyBoardInterrupt - 89
+2025-09-18 00:05:56,200 : PyService [ERROR] Service Cancelled - 110
+2025-09-18 00:05:56,200 : PyService [INFO] Status=Stopping - 63
+2025-09-18 00:05:56,200 : PyService [INFO] Status=Stopped - 63
+2025-09-18 00:05:58,735 : PyService [INFO] PyService Start <Service> - None - 79
+2025-09-18 00:05:58,735 : PyService [INFO] Status=Initting - 63
+2025-09-18 00:05:58,735 : PyService [INFO] Status=Running - 63
+2025-09-18 00:05:59,583 : PyService [INFO] Recv 1 b'asdas' - 233
+2025-09-18 00:06:00,423 : PyService [INFO] Recv 1 b'asdasd' - 233
+2025-09-18 00:06:00,774 : PyService [ERROR] Traceback (most recent call last):
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 107, in _service
+    await self.run()
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 231, in run
+    await sock.send(msg.encode())
+  File "d:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/src/psvc/main.py", line 206, in send
+    raise ValueError('Cannot send Null message')
+ValueError: Cannot send Null message
+ - 112
+2025-09-18 00:06:00,774 : PyService [INFO] Status=Stopping - 63
+2025-09-18 00:06:00,774 : PyService [INFO] Status=Stopped - 63
+2025-09-18 00:06:06,227 : PyService [INFO] Stopping by KeyBoardInterrupt - 89
+2025-09-18 00:06:06,227 : PyService [ERROR] Service Cancelled - 110
+2025-09-18 00:06:06,227 : PyService [INFO] Status=Stopping - 63
+2025-09-18 00:06:06,228 : PyService [INFO] Status=Stopped - 63
