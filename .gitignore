@@ -1,5 +1,6 @@
 **/__pycache__/
 **/log/
+**.log
 .venv/
 
 kjutil/
@@ -7,4 +8,5 @@ kjutil/
 
 dist/
 build/
+**.spec
 **.egg-info/

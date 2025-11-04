@@ -3,52 +3,77 @@ from abc import ABC, abstractmethod
 import traceback
 import datetime
 
-import asyncio
+import os
+import sys
+import asyncio, aiofiles
 import signal
 import traceback
 import contextlib
 import itertools
 import struct
-import sys
+import json
+import subprocess
+from typing import AsyncGenerator, Tuple, Any
 
-'''
-class Commander(metaclass=ABCMeta):
-    def __init__(self):
-        pass
-
-    async def ready(self): # -> bool
-        pass
-
-    async def request(self): # -> (str, str)
-        pass
-
-    async def print(self): # -> None
-        pass
+def mkdir(path):
+    path = os.path.abspath(path)
+    p = os.path.dirname(path)
+    if not (os.path.exists(p) and os.path.isdir(p)):
+        mkdir(p)
+    if not os.path.exists(path):
+        os.mkdir(path)
 
 
-class CommanderSocket(Commander):
-    def __init__(self):
-        pass
+class Component:
+    def __init__(self, svc, name):
+        if svc == None:
+            self.svc = None
+            self.name = name
+        else:
+            self.svc = svc
+            self.name = svc.name+'-'+name
+            self.l = logging.getLogger(name=self.name)
+            self.svc.append_component(self)
+        self._component_index = itertools.count(1)
+        self._components = {}
 
-    '''
+    def append_component(self, component):
+        index = next(self._component_index)
+        self._components[index] = component
 
+    def delete_component(self, index):
+        del(self._components[index])
 
-class Service(ABC):
+    def __repr__(self):
+        return '<%s>' % (self.name,)
+
+class Service(Component, ABC):
     _fmt = '%(asctime)s : %(name)s [%(levelname)s] %(message)s - %(lineno)s'
 
-    def __init__(self, name='Service'):
-        self.name = name
+    def __init__(self, name='Service', root_file=None):
+        Component.__init__(self, svc=None, name=name)
+        self._sigterm = asyncio.Event()
+        self._loop = None
+        self._tasks = []
+        self._subsvcs = {}
         self.status = None
-        self.tasks = []
-        self.sigterm = asyncio.Event()
-        self.loop = None
+
+        if os.path.basename(sys.executable).startswith('python'):
+            self._root_path = os.path.abspath(os.path.dirname(sys.executable))
+        elif root_file:
+            self._root_path = os.path.abspath(os.path.dirname(root_file))
+        else:
+            self._root_path = None
 
     def append_task(self, loop:asyncio.AbstractEventLoop, coro, name):
+        self.l.debug('Append Task - %s', name)
         task = loop.create_task(coro, name=name)
-        self.tasks.append(task)
+        self._tasks.append(task)
+        return task
     
     async def delete_task(self, task: asyncio.Task):
-        if task in self.tasks and not task.done():
+        self.l.debug('Delete Task - %s', task.get_name())
+        if task in self._tasks and not task.done():
             if task is asyncio.current_task():
                 raise RuntimeError('Cannot delete the current running task')
             
@@ -57,14 +82,26 @@ class Service(ABC):
                 await task
             except asyncio.CancelledError:
                 pass
-            self.tasks.remove(task)
+            self._tasks.remove(task)
+
+    def append_svc(self, executable, name, args):
+        self.l.debug(sys.path)
+        subsvc = subprocess.Popen(executable=executable, args=[executable, *args],
+                                  stdout=None, stderr=None)
+        self._subsvcs[name] = subsvc
+        self.l.debug(args)
+    
+    async def delete_svc(self, name):
+        self._subsvcs[name].terminate()
+        self._subsvcs[name].wait()
+        del(self._subsvcs[name])
 
     def set_status(self, status):
         self.l.info('Status=%s', status)
         self.status = status
 
     def stop(self):
-        self.sigterm.set()
+        self._sigterm.set()
 
     def on(self, level=logging.DEBUG):
         fh = logging.FileHandler(self.name+'.log')
@@ -77,25 +114,23 @@ class Service(ABC):
         signal.signal(signal.SIGTERM, self.stop)
 
         self.l.info('PyService Start %s', self)
-        self.loop = asyncio.get_event_loop()
-        asyncio.set_event_loop(self.loop)
+        self._loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self._loop)
 
-        self.append_task(self.loop, self._commanding(), 'CommandWork')
-        self.append_task(self.loop, self._service(), 'ServiceWork')
+        self.append_task(self._loop, self._service(), 'ServiceWork')
 
         try:
-            self.loop.run_until_complete(asyncio.gather(*self.tasks, return_exceptions=True))
+            self._loop.run_until_complete(asyncio.gather(*self._tasks, return_exceptions=True))
         except KeyboardInterrupt as i:
             self.l.info('Stopping by KeyBoardInterrupt')
         finally:
-            for t in self.tasks:
+            for t in self._tasks:
                 t.cancel()
-            self.loop.run_until_complete(asyncio.gather(*self.tasks, return_exceptions=True))
+            for svc in self._subsvcs:
+                self.delete_svc(svc)
+            self._loop.run_until_complete(asyncio.gather(*self._tasks, return_exceptions=True))
 
-        self.loop.close()
-    
-    async def _commanding(self):
-        pass
+        self._loop.close()
 
     async def _service(self):
         self.set_status('Initting')
@@ -103,7 +138,7 @@ class Service(ABC):
         
         self.set_status('Running')
         try:
-            while not self.sigterm.is_set():
+            while not self._sigterm.is_set():
                 await self.run()
 
         except asyncio.CancelledError as c:
@@ -127,26 +162,27 @@ class Service(ABC):
 
     def __repr__(self):
         return '<%s> - %s' % (self.name, self.status)
-    
-class Socket:
+
+class Socket(Component):
     _max_size = 64 * 1024
     
-    def __init__(self, svc: Service, name=''):
-        self.svc = svc
-        self.name = svc.name+'-'+name
-        self.l = logging.getLogger(name=self.name)
+    def __init__(self, svc: Service, name='Socket', callback=None, callback_end=None):
+        super().__init__(svc, name)
         self._gen = itertools.count(1)
         self._conns = {}
-        self._recvs = asyncio.Queue()
+        self._recvs = {}
+        self._handle_task = None
+        self.callback = callback
+        self.callback_end = callback_end
                
     async def bind(self, addr:str, port:int):
         self.server = await asyncio.start_server(self._handler, host=addr, port=port)
         addrs = ", ".join(str(sock.getsockname()) for sock in self.server.sockets)
         self.l.debug('Serving on %s', addrs)
-        self.svc.append_task(asyncio.get_running_loop(), self._serv(), self.name)
-    
+        self._handle_task = self.svc.append_task(asyncio.get_running_loop(), self._serv(), self.name)
+
     async def server_join(self):
-        await self.server.serve_forever()
+        await self.server.wait_closed()
 
     async def _serv(self):
         try:
@@ -160,17 +196,25 @@ class Socket:
 
     async def connect(self, addr, port):
         r, w = await asyncio.open_connection(addr, port)
-        self.svc.append_task(asyncio.get_running_loop(), self._handler(r, w), self.name)
+        self._handle_task = self.svc.append_task(asyncio.get_running_loop(), self._handler(r, w), self.name)
 
-    def _add_connection(self, cid, reader, writer):
+    async def _add_connection(self, cid, reader, writer):
         peer = writer.get_extra_info("peername")
         self.l.debug('new connection %s', peer)
         self._conns[cid] = (peer, reader, writer)
+        self._recvs[cid] = asyncio.Queue()
+        if self.callback:
+            await self.callback(cid)
+
+    async def _del_connection(self, cid):
+        del(self._conns[cid])
+        del(self._recvs[cid])
+        if self.callback_end:
+            await self.callback_end(cid)
 
     async def _handler(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         cid = next(self._gen)
-        
-        self._add_connection(cid, reader, writer)
+        await self._add_connection(cid, reader, writer)
         try:
             while True:
                 raw = await reader.readexactly(4)
@@ -178,22 +222,24 @@ class Socket:
                 if size <= 0 or size > Socket._max_size:
                     raise ValueError('invalid header length')
                 buf = await reader.readexactly(size)
-                await self._recvs.put((cid, buf))
+                self.l.debug('Receive %s from %d' % (buf, cid))
+                await self._recvs[cid].put(buf)
         except asyncio.CancelledError:
             pass
+        except asyncio.IncompleteReadError:
+            self.l.info('Connection Ended (%d)' % (cid))
         finally:
             writer.close()
+            await self._del_connection(cid)
             with contextlib.suppress(Exception):
                 await writer.wait_closed()
 
-    async def recv(self):
-        return await self._recvs.get()
-
-    async def _send(self, msg, cid):
+    async def _send(self, msg: bytes, cid: int) -> None:
         _, _, writer = self._conns[cid]
         writer: asyncio.StreamWriter
         mv = memoryview(msg)
         i, n = 0, len(mv)
+        self.l.debug('Send %s to %d' % (msg, cid))
         while i < n:
             size = min(Socket._max_size, n-i)
             buf = mv[i:i+size]
@@ -202,21 +248,165 @@ class Socket:
             await writer.drain()
             i += size
 
-    async def send(self, msg, cid=None):
+    async def recv(self, cid=None) -> Tuple[int, bytes]:
+        if cid == None:
+            while True:
+                try:
+                    for cid, buf in self._recvs.items():
+                        try:
+                            data = buf.get_nowait()
+                            return cid, data
+                        except asyncio.QueueEmpty:
+                            continue
+                        except Exception as e:
+                            self.l.exception(e)
+                    await asyncio.sleep(0.1)  
+                except asyncio.CancelledError:
+                    break
+        else:
+            data = await self._recvs[cid].get()
+            return cid, data
+
+    async def send(self, msg: bytes, cid: int) -> None:
         if len(msg) <= 0:
             raise ValueError('Cannot send Null message')
-        if cid == None:
-            cid = next(iter(self._conns))
         await self._send(msg, cid)
 
+    async def recv_str(self, cid: int) -> str:
+        _, msg = await self.recv(cid)
+        return msg.decode()
 
-class EchoService(Service):
+    async def send_str(self, string: str, cid: int) -> None:
+        await self.send(string.encode(), cid)
+
+    async def recv_file(self, path: os.PathLike, cid: int) -> None:
+        try:
+            fsize = int(await self.recv_str(cid))
+            rsize = 0
+            async with aiofiles.open(path, 'wb') as af:
+                while rsize < fsize:
+                    _, chunk = await self.recv(cid)
+                    rsize += len(chunk)
+                    await af.write(chunk)
+                    if rsize > fsize:
+                        raise Exception('Unmatched file data')
+        except ValueError as ve:
+            self.l.error('Value Error')
+
+    async def send_file(self, path: os.PathLike, cid: int) -> None:
+        fsize = os.path.getsize(path)
+        await self.send_str(str(fsize), cid)
+        async with aiofiles.open(path, 'rb') as af:
+            while True:
+                chunk = await af.read(self._max_size)
+                if chunk:
+                    await self.send(chunk, cid)
+                else:
+                    break
+
+    async def close(self):
+        if self._handle_task:
+            await self.svc.delete_task(self._handle_task)
+        self._handle_task = None
+
+
+class Command:
+    def __init__(self, commander, ident):
+        self._cmdr = commander
+        self._ident = ident
+    
+    async def handle(self, body, cid):
+        await asyncio.sleep(0.1)
+    
+class Print(Command):
+    async def handle(self, body, cid):
+        self._cmdr.l.debug('print: %s at %d', body, cid)
+
+class Echo(Command):
+    async def handle(self, body, cid):
+        await self._cmdr.send_command('_print', body, cid)
+
+class Build(Command):
+    async def handle(self, body, cid):
+        py_exe = body['python']
+        name = body['name']
+        file = body['file']
+
+        svc: Service = self._cmdr.svc
+        svc.append_svc(py_exe, 'Service_Build', ['-m', 'PyInstaller', '--onefile', '--name', name, '--noconsole', file])
+
+class Commander(Component):
+    def __init__(self, svc: Service, name='Commander'):
+        super().__init__(svc, name)
+        self._sock = Socket(self.svc, name+'-Sock')
+        self._en = json.JSONEncoder()
+        self._de = json.JSONDecoder()
+        self._cmds = {}
+        self._task = self.svc.append_task(asyncio.get_running_loop(), self._receive(), name+'-Res')
+
+    def sock(self):
+        return self._sock
+
+    async def bind(self, addr: str, port: int):
+        await self._sock.bind(addr, port)
+    
+    async def connect(self, addr: str, port: int):
+        await self._sock.connect(addr, port)
+    
+    def set_default_command(self):
+        self.set_command(Print, '_print')
+        self.set_command(Echo, '_echo')
+        self.set_command(Build, '_build')
+
+    def set_command(self, cmd, ident):
+        self._cmds[ident] = cmd(self, ident)
+
+    async def send_command(self, cmd_ident, body, cid):
+        cmd_header = {
+            'ident': cmd_ident,
+            'body': body,
+        }
+        await self._sock.send_str(self._en.encode(cmd_header), cid)
+        
+    async def handle(self, cmd_ident, body, cid):
+        cmd_header = {
+            'ident': cmd_ident,
+            'body': body,
+        }
+        await self._handle(cmd_header, cid)
+
+    async def _handle(self, cmd_header, cid):
+        result = None
+        try:
+            ident = cmd_header['ident']
+            body = cmd_header['body']
+            result = await self._cmds[ident].handle(body, cid)
+        except Exception as e:
+            self.l.exception(e)
+        return result
+    
+    async def _receive(self):
+        try:
+            while True:
+                cid, msg = await self._sock.recv()
+                msg = msg.decode()
+                cmd_header = self._de.decode(msg)
+                await self._handle(cmd_header, cid)
+        except asyncio.CancelledError:
+            self.l.exception('Commander Error')
+        finally:
+            await self._sock.close()
+
+
+
+class BuildService(Service):
+    async def init(self):
+        self.cmdr = Commander(self)
+        self.cmdr.set_default_command()
+        await self.cmdr.bind('0.0.0.0', 60620)
+
     async def run(self):
-        sock = Socket(self, 'Echo')
-        await sock.bind('0.0.0.0', 60620)
-        while True:
-            cid, msg = await sock.recv()
-            await sock.send(msg, cid)
+        await asyncio.sleep(1)
 
 async def ainput(prompt="", loop=None):
     loop = loop or asyncio.get_running_loop()
@@ -225,18 +415,25 @@ async def ainput(prompt="", loop=None):
     return msg.strip()
 
 class SendService(Service):
+    async def init(self):
+        self.cmdr = Commander(self)
+        self.cmdr.set_default_command()
+        await self.cmdr.connect('127.0.0.1', 60620)
+
     async def run(self):
-        sock = Socket(self, 'Send')
-        await sock.connect('127.0.0.1', 60620)
-        while True:
-            msg = await ainput()
-            await sock.send(msg.encode())
-            cid, rcv = await sock.recv()
-            self.l.info('Recv %d %s', cid, rcv)
-            
+        msg = await ainput()
+        msg = msg.strip()
+        body = {
+            'python': 'D:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/.venv/Scripts/python.exe',
+            'name': 'BuildTest',
+            'file': msg,
+        }
+        if msg:
+            await self.cmdr.send_command('_build', body, 1)
+         
 if __name__ == '__main__':
-    if input() == 's':
-        svc = EchoService()
+    if len(sys.argv) == 1:
+        svc = BuildService()
         svc.on()
     else:
         svc = SendService()
