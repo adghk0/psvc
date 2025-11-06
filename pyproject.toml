@@ -10,15 +10,17 @@ authors = [
   { name="Eom Kyoungjun", email="adghk01234@gmail.com" }
 ]
 readme = "README.md"
-license = { file = "LISENSE" }
-dependencies = []
+license = { file = "LICENSE" }
+dependencies = [
+  aiofiles,
+  ]
 
 [project.urls]
 Homepage = "https://github.com/adghk0/psvc"
 Documentation = "https://github.com/adghk0/psvc"
 
-[tool.setuptools]
-package-dir = {"" = "src"}
+[tool.setuptools.package-dir]
+"" = "src"
 
 [tool.setuptools.packages.find]
 where = ["src"]
