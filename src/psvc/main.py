@@ -13,15 +13,7 @@ import itertools
 import struct
 import json
 import subprocess
-from typing import AsyncGenerator, Tuple, Any
-
-def mkdir(path):
-    path = os.path.abspath(path)
-    p = os.path.dirname(path)
-    if not (os.path.exists(p) and os.path.isdir(p)):
-        mkdir(p)
-    if not os.path.exists(path):
-        os.mkdir(path)
+from typing import Tuple
 
 
 class Component:
@@ -47,6 +39,7 @@ class Component:
     def __repr__(self):
         return '<%s>' % (self.name,)
 
+
 class Service(Component, ABC):
     _fmt = '%(asctime)s : %(name)s [%(levelname)s] %(message)s - %(lineno)s'
 
@@ -58,7 +51,7 @@ class Service(Component, ABC):
         self._subsvcs = {}
         self.status = None
 
-        if os.path.basename(sys.executable).startswith('python'):
+        if not os.path.basename(sys.executable).startswith('python'):
             self._root_path = os.path.abspath(os.path.dirname(sys.executable))
         elif root_file:
             self._root_path = os.path.abspath(os.path.dirname(root_file))
@@ -162,6 +155,7 @@ class Service(Component, ABC):
 
     def __repr__(self):
         return '<%s> - %s' % (self.name, self.status)
+
 
 class Socket(Component):
     _max_size = 64 * 1024
@@ -303,6 +297,42 @@ class Socket(Component):
                     await self.send(chunk, cid)
                 else:
                     break
+    
+    async def recv_file_piece(self, path: os.PathLike, cid: int) -> None:
+        try:
+            f_size = int(await self.recv_str(cid))
+            pos = int(await self.recv_str(cid))
+            f_size -= pos
+            cur_size = 0
+            if f_size > 0:
+                async with aiofiles.open(path, 'ab') as af:
+                    af.seek(pos, 0)
+                    while cur_size < f_size:
+                        _, chunk = await self.recv(cid)
+                        cur_size += len(chunk)
+                        await af.write(chunk)
+                        if cur_size > f_size:
+                            raise Exception('Unmatched file data')
+        except ValueError as ve:
+            self.l.error('Value Error')
+
+    async def send_file_piece(self, path: os.PathLike, pos: int, send_size: int, cid: int) -> int:
+        rem_size = os.path.getsize(path) - pos
+        send_size = min(rem_size, send_size) if send_size > 0 else rem_size
+        cur_size = 0
+        await self.send_str(str(send_size), cid)
+        await self.send_str(str(pos), cid)
+        if send_size > 0:
+            async with aiofiles.open(path, 'rb') as af:
+                af.seek(pos, 0)
+                while cur_size < send_size:
+                    chunk = await af.read(min(self._max_size, rem_size - cur_size))
+                    if chunk:
+                        cur_size += len(chunk)
+                        await self.send(chunk, cid)
+                    else:
+                        break
+        return send_size
 
     async def close(self):
         if self._handle_task:
@@ -326,15 +356,6 @@ class Echo(Command):
     async def handle(self, body, cid):
         await self._cmdr.send_command('_print', body, cid)
 
-class Build(Command):
-    async def handle(self, body, cid):
-        py_exe = body['python']
-        name = body['name']
-        file = body['file']
-
-        svc: Service = self._cmdr.svc
-        svc.append_svc(py_exe, 'Service_Build', ['-m', 'PyInstaller', '--onefile', '--name', name, '--noconsole', file])
-
 class Commander(Component):
     def __init__(self, svc: Service, name='Commander'):
         super().__init__(svc, name)
@@ -343,6 +364,7 @@ class Commander(Component):
         self._de = json.JSONDecoder()
         self._cmds = {}
         self._task = self.svc.append_task(asyncio.get_running_loop(), self._receive(), name+'-Res')
+        self._handle_lock = asyncio.Lock()
 
     def sock(self):
         return self._sock
@@ -356,7 +378,6 @@ class Commander(Component):
     def set_default_command(self):
         self.set_command(Print, '_print')
         self.set_command(Echo, '_echo')
-        self.set_command(Build, '_build')
 
     def set_command(self, cmd, ident):
         self._cmds[ident] = cmd(self, ident)
@@ -373,14 +394,15 @@ class Commander(Component):
             'ident': cmd_ident,
             'body': body,
         }
-        await self._handle(cmd_header, cid)
+        return await self._handle(cmd_header, cid)
 
     async def _handle(self, cmd_header, cid):
         result = None
         try:
             ident = cmd_header['ident']
             body = cmd_header['body']
-            result = await self._cmds[ident].handle(body, cid)
+            async with self._handle_lock:
+                result = await self._cmds[ident].handle(body, cid)
         except Exception as e:
             self.l.exception(e)
         return result
@@ -398,43 +420,13 @@ class Commander(Component):
             await self._sock.close()
 
 
-
-class BuildService(Service):
-    async def init(self):
-        self.cmdr = Commander(self)
-        self.cmdr.set_default_command()
-        await self.cmdr.bind('0.0.0.0', 60620)
-
-    async def run(self):
-        await asyncio.sleep(1)
-
 async def ainput(prompt="", loop=None):
     loop = loop or asyncio.get_running_loop()
     print(prompt, end="", flush=True)
     msg = await loop.run_in_executor(None, sys.stdin.readline)
     return msg.strip()
 
-class SendService(Service):
-    async def init(self):
-        self.cmdr = Commander(self)
-        self.cmdr.set_default_command()
-        await self.cmdr.connect('127.0.0.1', 60620)
-
-    async def run(self):
-        msg = await ainput()
-        msg = msg.strip()
-        body = {
-            'python': 'D:/Disk01/netdisk/kyoungjun/Data_Kyoungjun/Project/PyService/.venv/Scripts/python.exe',
-            'name': 'BuildTest',
-            'file': msg,
-        }
-        if msg:
-            await self.cmdr.send_command('_build', body, 1)
-         
-if __name__ == '__main__':
-    if len(sys.argv) == 1:
-        svc = BuildService()
-        svc.on()
-    else:
-        svc = SendService()
-        svc.on()
+'''
+svc = MyService()
+svc.on()
+'''
