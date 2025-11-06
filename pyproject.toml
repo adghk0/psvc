@@ -12,8 +12,8 @@ authors = [
 readme = "README.md"
 license = { file = "LICENSE" }
 dependencies = [
-  aiofiles,
-  ]
+  "aiofiles>=23.2.1",
+]
 
 [project.urls]
 Homepage = "https://github.com/adghk0/psvc"

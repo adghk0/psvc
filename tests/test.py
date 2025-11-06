@@ -9,7 +9,8 @@ class CmdSendLog(Command):
         sock: Socket
         pos = body['pos']
         self._cmdr.l.info('Send file start at %d', pos)
-        await sock.send_file_piece('Service.log', pos, 0, cid)
+        self._cmdr.send_command('recv_file_piece', {}, 1)
+        return await sock.send_file_piece('Service.log', pos, 0, cid)
 
 class CmdRecvLog(Command):
     async def handle(self, body, cid):
@@ -22,6 +23,7 @@ class CmdRecvLog(Command):
 class Server(Service):
     async def init(self):
         self.cmdr = Commander(self)
+        self.cmdr.set_command(CmdRecvLog, 'recv_file_piece')
         await self.cmdr.bind('0.0.0.0', 50000)
     
     async def run(self):
@@ -35,7 +37,7 @@ class Client(Service):
         await self.cmdr.connect('127.0.0.1', 50000)
     
     async def run(self):
-        self.lastpos += self.cmdr.handle('send', {'pos': self.lastpos})
+        self.lastpos += await self.cmdr.handle('send', {'pos': self.lastpos}, 1)
         await asyncio.sleep(3)
 
 if __name__ == '__main__':

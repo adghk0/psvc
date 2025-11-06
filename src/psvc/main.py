@@ -7,7 +7,6 @@ import os
 import sys
 import asyncio, aiofiles
 import signal
-import traceback
 import contextlib
 import itertools
 import struct
@@ -306,7 +305,7 @@ class Socket(Component):
             cur_size = 0
             if f_size > 0:
                 async with aiofiles.open(path, 'ab') as af:
-                    af.seek(pos, 0)
+                    await af.seek(pos, 0)
                     while cur_size < f_size:
                         _, chunk = await self.recv(cid)
                         cur_size += len(chunk)
@@ -324,7 +323,7 @@ class Socket(Component):
         await self.send_str(str(pos), cid)
         if send_size > 0:
             async with aiofiles.open(path, 'rb') as af:
-                af.seek(pos, 0)
+                await af.seek(pos, 0)
                 while cur_size < send_size:
                     chunk = await af.read(min(self._max_size, rem_size - cur_size))
                     if chunk:
@@ -355,6 +354,7 @@ class Print(Command):
 class Echo(Command):
     async def handle(self, body, cid):
         await self._cmdr.send_command('_print', body, cid)
+
 
 class Commander(Component):
     def __init__(self, svc: Service, name='Commander'):
