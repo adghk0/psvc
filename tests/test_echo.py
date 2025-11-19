@@ -23,12 +23,11 @@ class Client(Service):
     async def init(self):
         self.cmdr = Commander(self)
         self.cmdr.set_command(Print, '_print')
-        self.lastpos = 0
         await self.cmdr.connect('127.0.0.1', 50000)
     
     async def run(self):
-        msg = ainput('>')
-        self.lastpos += await self.cmdr.handle('echo', msg, 1)
+        msg = await ainput('>')
+        await self.cmdr.send_command('echo', msg, 1)
         await asyncio.sleep(3)
 
 async def ainput(prompt="", loop=None):
@@ -39,7 +38,7 @@ async def ainput(prompt="", loop=None):
 
 if __name__ == '__main__':
     if len(sys.argv) > 1:
-        svc = Server('Server')
+        svc = Server('EchoServer')
     else:
-        svc = Client('Service')
+        svc = Client('EchoTester')
     svc.on()

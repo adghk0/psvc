@@ -14,7 +14,7 @@ class Service(Component, ABC):
     _fmt = '%(asctime)s : %(name)s [%(levelname)s] %(message)s - %(lineno)s'
 
     def __init__(self, name='Service', root_file=None, config_file=None):
-        Component.__init__(self, root_filesvc=None, name=name)
+        Component.__init__(self, None, name)
         self._sigterm = asyncio.Event()
         self._loop = None
         self._tasks = []
@@ -76,13 +76,13 @@ class Service(Component, ABC):
         self._sigterm.set()
 
     def set_logger(self, level):
-        fh = logging.FileHandler(self.name+'.log')
-        fh.setLevel(level)
-        fh.setFormatter(logging.Formatter(Service._fmt))
+        self._fh = logging.FileHandler(self.name+'.log')
+        self._fh.setLevel(level)
+        self._fh.setFormatter(logging.Formatter(Service._fmt))
         logging.basicConfig(level=level, force=True,
                             format=Service._fmt)
         self.l = logging.getLogger(name='PyService')
-        self.l.addHandler(fh)
+        self.l.addHandler(self._fh)
 
     def on(self, level=logging.DEBUG):
         self.set_logger(level)
@@ -100,8 +100,6 @@ class Service(Component, ABC):
         finally:
             for t in self._tasks:
                 t.cancel()
-            for svc in self._subsvcs:
-                self.delete_svc(svc)
             self._loop.run_until_complete(asyncio.gather(*self._tasks, return_exceptions=True))
         self._loop.close()
 

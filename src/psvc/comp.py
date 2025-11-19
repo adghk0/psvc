@@ -10,6 +10,7 @@ class Component:
             self.svc = svc
             self.name = svc.name+'-'+name
             self.l = logging.getLogger(name=self.name)
+            self.l.addHandler(self.svc._fh)
             self.l: logging.Logger
             self.svc.append_component(self)
         self._component_index = itertools.count(1)

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "psvc"
-version = "0.3.0"
+version = "0.3.1"
 description = "Lightweight Python-based service management framework"
 authors = [
   { name="Eom Kyoungjun", email="adghk01234@gmail.com" }
