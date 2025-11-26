@@ -24,6 +24,7 @@ class Commander(Component):
         self._cmds = {}
         self._task = self.svc.append_task(asyncio.get_running_loop(), self._receive(), name+'-Res')
         self._handle_lock = asyncio.Lock()
+        self.l.debug('new Commander attached')
 
     def sock(self):
         return self._sock

@@ -21,6 +21,7 @@ class Socket(Component):
         self._handle_task = None
         self.callback = callback
         self.callback_end = callback_end
+        self.l.debug('new Socket attached')
                
     async def bind(self, addr:str, port:int):
         self.server = await asyncio.start_server(self._handler, host=addr, port=port)

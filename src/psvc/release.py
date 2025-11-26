@@ -40,8 +40,12 @@ class Releaser(Component):
     def __init__(self, svc: Service, commnader: Commander, name='Releaser'):
         super().__init__(svc, name)
         self._cmdr = commnader
-        self.release_path = self.svc.get_config(Releaser._release_path_conf, None)
+        try:
+            self.release_path = self.svc.get_config(Releaser._release_path_conf, None)
+        except KeyError:
+            raise KeyError('the release path is not setted (%s)' % (Releaser._release_path_conf,))
         self.versions = self.get_version_list()
+        self.l.debug('new Releaser attached')
 
     def set_releaser_command(self):
         self._cmdr.set_command(CmdSendVersions, '__send_versions__')

@@ -11,11 +11,8 @@ async def ainput(prompt="", loop=None):
 
 class Server(Service):
     async def init(self):
-        print('1')
         self.cmdr = Commander(self)
-        print('2')
         Releaser(self, self.cmdr)
-        print('3')
         await self.cmdr.bind('0.0.0.0', 50000)
     
     async def run(self):

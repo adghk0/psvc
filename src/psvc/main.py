@@ -34,7 +34,7 @@ class Config(Component):
             return self._config[section][key]
         except KeyError as e:
             if default is None:
-                raise ValueError('Config is not exist %s\\%s' % (section, key))
+                raise KeyError('Config is not exist %s\\%s' % (section, key))
             else:
                 self.set_config(section, key, default)
                 return default
@@ -42,7 +42,7 @@ class Config(Component):
             raise e
 
 class Service(Component, ABC):
-    _fmt = '%(asctime)s : %(name)s [%(levelname)s] %(message)s - %(lineno)s'
+    _log_format = '%(asctime)s : %(name)s [%(levelname)s] %(message)s - %(lineno)s'
 
     def __init__(self, name='Service', root_file=None, config_file=None, level=logging.INFO):
         Component.__init__(self, None, name)
@@ -62,6 +62,7 @@ class Service(Component, ABC):
             self._root_path = None
         
         self.set_logger(self.level)
+        self.l.info('=======================START=======================')
         self._config_file = config_file
         self._config = Config(self, self._config_file)
         self.version = self.get_config(_version_conf, None, '0.0')
@@ -110,10 +111,10 @@ class Service(Component, ABC):
     def set_logger(self, level):
         self._fh = logging.FileHandler(self.psvc_path(self.name+'.log'))
         self._fh.setLevel(level)
-        self._fh.setFormatter(logging.Formatter(Service._fmt))
+        self._fh.setFormatter(logging.Formatter(Service._log_format))
         logging.basicConfig(level=level, force=True,
-                            format=Service._fmt)
-        self.l = logging.getLogger(name='PyService')
+                            format=Service._log_format)
+        self.l = logging.getLogger(name=self.name)
         self.l.addHandler(self._fh)
 
     def on(self):
@@ -138,19 +139,33 @@ class Service(Component, ABC):
 
     async def _service(self):
         self.set_status('Initting')
-        await self.init()
-        
-        self.set_status('Running')
         try:
-            while not self._sigterm.is_set():
-                await self.run()
+            await self.init()
         except asyncio.CancelledError as c:
-            self.l.error('Service Cancelled')
+            self.l.error('Service Cancelled while initting.')
         except Exception as e:
+            self.l.error('== Error occurred while initting. ==')
             self.l.error(traceback.format_exc())
         finally:
+            self.stop()
+        try:
+            if not self._sigterm.is_set():
+                self.set_status('Running')
+                while not self._sigterm.is_set():
+                    await self.run()
+        except asyncio.CancelledError as c:
+            self.l.error('Service Cancelled while running.')
+        except Exception as e:
+            self.l.error('== Error occurred while running. ==')
+            self.l.error(traceback.format_exc())
+
+        finally:
             self.set_status('Stopping')
-            await self.destroy()
+            try:
+                await self.destroy()
+            except Exception as e:
+                self.l.error('== Error occurred while destorying. ==')
+                self.l.error(traceback.format_exc())
             self.set_status('Stopped')
 
     async def init(self):
