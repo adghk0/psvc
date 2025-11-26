@@ -35,6 +35,8 @@ class Commander(Component):
         await self._sock.connect(addr, port)
 
     def set_command(self, cmd, ident):
+        if ident in self._cmds:
+            raise ValueError('Ident is collided. (%s)' % (ident, ))
         self._cmds[ident] = cmd(self, ident)
 
     async def send_command(self, cmd_ident, body, cid):

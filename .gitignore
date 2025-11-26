@@ -10,3 +10,6 @@ dist/
 build/
 **.spec
 **.egg-info/
+
+tests/*.conf
+tests/*.log

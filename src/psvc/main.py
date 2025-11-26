@@ -9,17 +9,50 @@ import configparser
 
 from .comp import Component
 
+_version_conf = 'PSVC\\version'
+
+class Config(Component):
+    def __init__(self, svc, config_file, name='Config'):
+        super().__init__(svc, name)
+        self._config = configparser.ConfigParser()
+        self._config_file = self.svc.psvc_path(config_file)
+        if self._config_file:    
+            self._config.read(self._config_file)
+
+    def set_config(self, section: str, key: str, value):
+        if section not in self._config:
+            self._config.add_section(section)
+        self._config.set(section, key, value)
+        if self._config_file:
+            with open(self._config_file, 'w') as af:
+                self._config.write(af)
+
+    def get_config(self, section: str, key: str, default=None):
+        if key is None:
+            section, key = section.split('\\', 2)
+        try:
+            return self._config[section][key]
+        except KeyError as e:
+            if default is None:
+                raise ValueError('Config is not exist %s\\%s' % (section, key))
+            else:
+                self.set_config(section, key, default)
+                return default
+        except Exception as e:
+            raise e
 
 class Service(Component, ABC):
     _fmt = '%(asctime)s : %(name)s [%(levelname)s] %(message)s - %(lineno)s'
 
-    def __init__(self, name='Service', root_file=None, config_file=None):
+    def __init__(self, name='Service', root_file=None, config_file=None, level=logging.INFO):
         Component.__init__(self, None, name)
         self._sigterm = asyncio.Event()
         self._loop = None
         self._tasks = []
         self._closers = []
+        self._fh = None
         self.status = None
+        self.level = level
 
         if not os.path.basename(sys.executable).startswith('python'):
             self._root_path = os.path.abspath(os.path.dirname(sys.executable))
@@ -27,24 +60,23 @@ class Service(Component, ABC):
             self._root_path = os.path.abspath(os.path.dirname(root_file))
         else:
             self._root_path = None
-
+        
+        self.set_logger(self.level)
         self._config_file = config_file
-        self._config = configparser.ConfigParser()
-        if self._config_file:    
-            self._config.read(self._config_file)
-        self.version = self.get_config('PSVC', 'version')
-
+        self._config = Config(self, self._config_file)
+        self.version = self.get_config(_version_conf, None, '0.0')
+        
     def set_config(self, section: str, key: str, value):
-        self._config.set(section, key, value)
-        if self._config_file:
-            with aiofiles.open(self._config_file, 'w') as af:
-                self._config.write(af)
+        self._config.set_config(section, key, value)
 
-    def get_config(self, section: str, key: str):
-        try:
-            return self._config[section][key]
-        except:
-            return None
+    def get_config(self, section: str, key: str, default=None):
+        self._config.get_config(section, key, default)
+
+    def psvc_path(self, path):
+        if os.path.isabs(path):
+            return path
+        else:
+            return os.path.join(self._root_path, path)
         
     def append_task(self, loop:asyncio.AbstractEventLoop, coro, name):
         self.l.debug('Append Task - %s', name)
@@ -76,7 +108,7 @@ class Service(Component, ABC):
         self._sigterm.set()
 
     def set_logger(self, level):
-        self._fh = logging.FileHandler(self.name+'.log')
+        self._fh = logging.FileHandler(self.psvc_path(self.name+'.log'))
         self._fh.setLevel(level)
         self._fh.setFormatter(logging.Formatter(Service._fmt))
         logging.basicConfig(level=level, force=True,
@@ -84,9 +116,7 @@ class Service(Component, ABC):
         self.l = logging.getLogger(name='PyService')
         self.l.addHandler(self._fh)
 
-    def on(self, level=logging.DEBUG):
-        self.set_logger(level)
-
+    def on(self):
         signal.signal(signal.SIGTERM, self.stop)
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
@@ -114,7 +144,6 @@ class Service(Component, ABC):
         try:
             while not self._sigterm.is_set():
                 await self.run()
-
         except asyncio.CancelledError as c:
             self.l.error('Service Cancelled')
         except Exception as e:
@@ -125,14 +154,14 @@ class Service(Component, ABC):
             self.set_status('Stopped')
 
     async def init(self):
-        pass
+        await asyncio.sleep(0.1)
 
     @abstractmethod
     async def run(self):
         pass
 
     async def destroy(self):
-        pass
+        await asyncio.sleep(0.1)
 
     def __repr__(self):
         return '<%s> - %s' % (self.name, self.status)

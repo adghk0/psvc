@@ -1,6 +1,7 @@
 import sys
 import asyncio
-from psvc import Service, Commander, Command
+import logging
+from psvc import Service, Commander, Releaser, Updater
 
 async def ainput(prompt="", loop=None):
     loop = loop or asyncio.get_running_loop()
@@ -8,18 +9,13 @@ async def ainput(prompt="", loop=None):
     msg = await loop.run_in_executor(None, sys.stdin.readline)
     return msg.strip()
 
-class Print(Command):
-    async def handle(self, body, cid):
-        self._cmdr.l.debug('print: %s at %d', body, cid)
-
-class Echo(Command):
-    async def handle(self, body, cid):
-        await self._cmdr.send_command('_print', body, cid)
-
 class Server(Service):
     async def init(self):
+        print('1')
         self.cmdr = Commander(self)
-        self.cmdr.set_command(Echo, 'echo')
+        print('2')
+        Releaser(self, self.cmdr)
+        print('3')
         await self.cmdr.bind('0.0.0.0', 50000)
     
     async def run(self):
@@ -28,17 +24,19 @@ class Server(Service):
 class Client(Service):
     async def init(self):
         self.cmdr = Commander(self)
-        self.cmdr.set_command(Print, '_print')
         await self.cmdr.connect('127.0.0.1', 50000)
+
     
     async def run(self):
         msg = await ainput('>')
-        await self.cmdr.send_command('echo', msg, 1)
+        if msg == 'l':
+            self.cmdr.send_command(Releaser.__send_versions__, {}, 1)
+            print(self.cmdr.sock().recv_str(1))
         await asyncio.sleep(3)
 
 if __name__ == '__main__':
     if len(sys.argv) > 1:
-        svc = Server('EchoServer')
+        svc = Server('ReleaseServer', __file__, config_file='release.conf', level=logging.DEBUG)
     else:
-        svc = Client('EchoTester')
+        svc = Client('UpdateTester', __file__, config_file='updater.conf', level=logging.DEBUG)
     svc.on()

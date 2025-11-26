@@ -9,9 +9,10 @@ class Component:
         else:
             self.svc = svc
             self.name = svc.name+'-'+name
-            self.l = logging.getLogger(name=self.name)
-            self.l.addHandler(self.svc._fh)
-            self.l: logging.Logger
+            if self.svc._fh:
+                self.l = logging.getLogger(name=self.name)
+                self.l.addHandler(self.svc._fh)
+                self.l: logging.Logger
             self.svc.append_component(self)
         self._component_index = itertools.count(1)
         self._components = {}
