@@ -13,8 +13,8 @@ from .main import Service
 class Socket(Component):
     _max_size = 64 * 1024
     
-    def __init__(self, svc: Service, name='Socket', callback=None, callback_end=None):
-        super().__init__(svc, name)
+    def __init__(self, svc: Service, name='Socket', parent=None, callback=None, callback_end=None):
+        super().__init__(svc, name, parent)
         self._gen = itertools.count(1)
         self._conns = {}
         self._recvs = {}
@@ -157,43 +157,7 @@ class Socket(Component):
                 else:
                     break
     
-    async def recv_file_piece(self, path: os.PathLike, cid: int) -> None:
-        try:
-            f_size = int(await self.recv_str(cid))
-            pos = int(await self.recv_str(cid))
-            f_size -= pos
-            cur_size = 0
-            if f_size > 0:
-                async with aiofiles.open(path, 'ab') as af:
-                    await af.seek(pos, 0)
-                    while cur_size < f_size:
-                        _, chunk = await self.recv(cid)
-                        cur_size += len(chunk)
-                        await af.write(chunk)
-                        if cur_size > f_size:
-                            raise Exception('Unmatched file data')
-        except ValueError as ve:
-            self.l.error('Value Error')
-
-    async def send_file_piece(self, path: os.PathLike, pos: int, send_size: int, cid: int) -> int:
-        rem_size = os.path.getsize(path) - pos
-        send_size = min(rem_size, send_size) if send_size > 0 else rem_size
-        cur_size = 0
-        await self.send_str(str(send_size), cid)
-        await self.send_str(str(pos), cid)
-        if send_size > 0:
-            async with aiofiles.open(path, 'rb') as af:
-                await af.seek(pos, 0)
-                while cur_size < send_size:
-                    chunk = await af.read(min(self._max_size, rem_size - cur_size))
-                    if chunk:
-                        cur_size += len(chunk)
-                        await self.send(chunk, cid)
-                    else:
-                        break
-        return send_size
-
-    async def close(self):
+    async def detach(self):
         if self._handle_task:
             await self.svc.delete_task(self._handle_task)
         self._handle_task = None

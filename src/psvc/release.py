@@ -7,7 +7,7 @@ from .cmd import Commander, Command
 
 
 def _version(s):
-    return tuple(s.split('.'))
+    return tuple(map(int, s.split('.')))
 
 
 class CmdSendVersions(Command):
@@ -48,18 +48,16 @@ class Releaser(Component):
         self.l.debug('new Releaser attached')
 
     def set_releaser_command(self):
-        self._cmdr.set_command(CmdSendVersions, '__send_versions__')
-        self._cmdr.set_command(CmdSendLatestVersion, '__send_latest_version__')
-        self._cmdr.set_command(CmdSendProgram, '__send_program__')
+        self._cmdr.set_command(CmdSendVersions, self.__send_versions__)
+        self._cmdr.set_command(CmdSendLatestVersion, self.__send_latest_version__)
+        self._cmdr.set_command(CmdSendProgram, self.__send_program__)
     
     def get_version_list(self):
-        versions = os.listdir(self.release_path)
-        return versions.sort(key=lambda v: _version(v))
-    
+        versions = sorted(os.listdir(self.release_path), key=_version)
+        return versions
 
 class Updater(Component):
     def __init__(self, svc: Service, commander: Commander, name='Updater'):
         super().__init__(svc, name)
         self._cmdr = commander
-
-
+        

@@ -3,7 +3,7 @@ from .network import Socket
 from .cmd import Command, Commander
 from .release import Releaser, Updater
 
-__name__ = [
+__all__ = [
     'Service',
     'Commander',
     'Command',
