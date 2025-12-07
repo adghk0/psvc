@@ -24,6 +24,3 @@ Documentation = "https://github.com/adghk0/psvc"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"

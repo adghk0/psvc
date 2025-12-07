@@ -11,15 +11,17 @@ from .comp import Component
 
 
 _version_conf = 'PSVC\\version'
-
+_default_conf_path = 'psvc.conf'
 
 class Config(Component):
     def __init__(self, svc, config_file, name='Config'):
         super().__init__(svc, name)
         self._config = configparser.ConfigParser()
-        self._config_file = self.svc.psvc_path(config_file)
-        if self._config_file:    
-            self._config.read(self._config_file)
+        if config_file is not None:
+            self._config_file = self.svc.path(config_file)
+        else:
+            self._config_file = self.svc.path(_default_conf_path)
+        self._config.read(self._config_file)
 
     def set_config(self, section: str, key: str, value):
         if section not in self._config:
@@ -64,6 +66,7 @@ class Service(Component, ABC):
         self.status = None
         self.level = level
         
+        self.set_root_path(root_file)
         self.set_logger(self.level)
         self.l.info('=======================START=======================')
         self._config_file = config_file

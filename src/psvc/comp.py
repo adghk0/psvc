@@ -19,10 +19,10 @@ class Component:
         self._parent_index = None
         self._parent = None
 
-        if parent is None and self != self.svc:
-            self.svc.append_child(self)
-        else:
-            self._parent.append_child(self)
+        if self.svc is None:
+            return
+        owner = parent if parent is not None else self.svc
+        owner.append_child(self)
 
     def append_child(self, component):
         index = next(self._component_index)

@@ -1,12 +1,12 @@
 from .main import Service
 from .network import Socket
-from .cmd import Command, Commander
+from .cmd import command, Commander
 from .release import Releaser, Updater
 
 __all__ = [
     'Service',
     'Commander',
-    'Command',
+    'command',
     'Socket',
     'Releaser',
     'Updater',

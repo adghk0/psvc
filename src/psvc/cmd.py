@@ -53,7 +53,7 @@ def command(_func=None, *, ident=None):
 
 class Commander(Component):
     def __init__(self, svc: Service, name='Commander', parent=None):
-        super().__init__(svc, name)
+        super().__init__(svc, name, parent)
         self._sock = Socket(self.svc, name+'-Sock', parent=self)
         self._en = json.JSONEncoder()
         self._de = json.JSONDecoder()
