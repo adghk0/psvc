@@ -156,7 +156,8 @@ class Service(Component, ABC):
         for closer, args in self._closers:
             closer(*args)
 
-    def stop(self):
+    def stop(self, signum=None, frame=None):
+        """서비스 중지. signal 핸들러로도 사용 가능"""
         self._sigterm.set()
 
     async def _service(self):

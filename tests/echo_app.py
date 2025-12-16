@@ -26,7 +26,7 @@ async def exit_cmd(cmdr: Commander, body, cid):
 class Server(Service):
     async def init(self):
         self.cmdr = Commander(self)
-        self.cmdr.set_command(echo_cmd)
+        self.cmdr.set_command(echo_cmd, exit_cmd)
         await self.cmdr.bind('0.0.0.0', 50000)
     
     async def run(self):
@@ -40,23 +40,24 @@ class Client(Service):
     async def init(self):
         self.cmdr = Commander(self)
         self.cmdr.set_command(print_cmd)
-        await self.cmdr.connect('127.0.0.1', 50000)
-    
+        self.cid = await self.cmdr.connect('127.0.0.1', 50000)
+        self.l.debug('Connected with cid=%d', self.cid)
+
     async def run(self):
         msg = await ainput('>')
         if not msg:
             return
-        
+
         if msg.lower() in ('exit', 'quit', 'q'):
             # 서버에 종료 요청
-            await self.cmdr.send_command('exit', msg, 1)
+            await self.cmdr.send_command('exit', msg, self.cid)
             # 클라이언트 서비스도 정상 종료
             self.l.info('Client terminate by command: %s', msg)
             self.stop()
             await asyncio.sleep(0.1)
             return
-        
-        await self.cmdr.send_command('echo', msg, 1)
+
+        await self.cmdr.send_command('echo', msg, self.cid)
 
 
 if __name__ == '__main__':

@@ -12,13 +12,15 @@ from .main import Service
 
 class Socket(Component):
     _max_size = 64 * 1024
-    
+
     def __init__(self, svc: Service, name='Socket', parent=None, callback=None, callback_end=None):
         super().__init__(svc, name, parent)
         self._gen = itertools.count(1)
         self._conns = {}
         self._recvs = {}
+        self._data_available = asyncio.Event()
         self._handle_task = None
+        self._client_cid = None  # 클라이언트 모드에서 사용할 cid
         self.callback = callback
         self.callback_end = callback_end
         self.l.debug('new Socket attached')
@@ -43,8 +45,25 @@ class Socket(Component):
             await self.server.wait_closed()
 
     async def connect(self, addr, port):
+        """서버에 연결하고 cid 반환"""
         r, w = await asyncio.open_connection(addr, port)
-        self._handle_task = self.svc.append_task(asyncio.get_running_loop(), self._handler(r, w), self.name)
+        # 클라이언트 모드에서는 cid를 미리 할당
+        self._client_cid = next(self._gen)
+        # 핸들러 시작 (내부에서 _add_connection 호출)
+        self._handle_task = self.svc.append_task(
+            asyncio.get_running_loop(),
+            self._handler(r, w),
+            self.name
+        )
+        # 연결이 등록될 때까지 대기 (최대 1초)
+        for _ in range(100):
+            if self._client_cid in self._conns:
+                break
+            await asyncio.sleep(0.01)
+        else:
+            raise TimeoutError('Connection not established within timeout')
+
+        return self._client_cid
 
     async def _add_connection(self, cid, reader, writer):
         peer = writer.get_extra_info("peername")
@@ -61,16 +80,26 @@ class Socket(Component):
             await self.callback_end(cid)
 
     async def _handler(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-        cid = next(self._gen)
+        # 클라이언트 모드면 미리 할당된 cid 사용, 서버 모드면 새로 생성
+        if self._client_cid is not None:
+            cid = self._client_cid
+        else:
+            cid = next(self._gen)
         await self._add_connection(cid, reader, writer)
         try:
             while True:
                 raw = await reader.readexactly(4)
-                (size, ) = struct.unpack('!I', raw)
+                try:
+                    (size, ) = struct.unpack('!I', raw)
+                except struct.error:
+                    raise ValueError('invalid header data')
+                
                 if size <= 0 or size > Socket._max_size:
                     raise ValueError('invalid header length')
+                
                 buf = await reader.readexactly(size)
                 await self._recvs[cid].put(buf)
+                self._data_available.set()
 
                 buf_debug = buf[0:min(len(buf), 20)]
                 self.l.debug('Receive %s (%d) from %d' % (buf_debug, len(buf), cid))
@@ -102,20 +131,16 @@ class Socket(Component):
         self.l.debug('Send %s (%d) to %d' % (msg_debug, len(msg), cid))
 
     async def recv(self, cid=None) -> Tuple[int, bytes]:
-        if cid == None:
+        if cid is None:
             while True:
-                try:
-                    for cid, buf in self._recvs.items():
-                        try:
-                            data = buf.get_nowait()
-                            return cid, data
-                        except asyncio.QueueEmpty:
-                            continue
-                        except Exception as e:
-                            self.l.exception(e)
-                    await asyncio.sleep(0.1)  
-                except asyncio.CancelledError:
-                    break
+                for check_cid, queue in self._recvs.items():
+                    try:
+                        data = queue.get_nowait()
+                        return check_cid, data
+                    except asyncio.QueueEmpty:
+                        continue
+                self._data_available.clear()
+                await self._data_available.wait()
         else:
             data = await self._recvs[cid].get()
             return cid, data

@@ -38,11 +38,12 @@ class Component:
         parent.append_child(self)
 
     def detach(self):
+        """현재 부모로부터 컴포넌트를 분리합니다."""
         if self._parent is not None and self._parent_index is not None:
             self._parent.delete_child(self._parent_index)
             self._parent = None
             self._parent_index = None
-
+            
     def __repr__(self):
         if self._parent is None:
             return '<%s>' % (self.name,)

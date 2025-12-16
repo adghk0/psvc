@@ -18,20 +18,39 @@ def command(_func=None, *, ident=None):
         async def ping(cmdr, body, cid):
             ...
 
+        # 인스턴스 메서드로도 사용 가능
+        class MyComponent(Component):
+            @command(ident="test")
+            async def my_cmd(self, cmdr, body, cid):
+                ...
+
     강제 조건(@command 사용 시):
       - async 함수이어야 함
-      - 인자 3개: (cmdr, body, cid)
+      - 일반 함수: 인자 3개 (cmdr, body, cid)
+      - 인스턴스 메서드: 인자 4개 (self, cmdr, body, cid)
     """
     def decorator(func):
         sig = inspect.signature(func)
         params = list(sig.parameters.values())
 
-        # (cmdr, body, cid) 3개 인자 강제
-        if len(params) != 3:
-            raise TypeError(
-                f"Command function '{func.__name__}' must have 3 parameters: "
-                "(cmdr, body, cid)"
-            )
+        # 인스턴스 메서드 여부 확인 (첫 파라미터가 'self'인지)
+        is_method = len(params) > 0 and params[0].name == 'self'
+
+        # 파라미터 개수 검증
+        if is_method:
+            # 인스턴스 메서드: self + (cmdr, body, cid) = 4개
+            if len(params) != 4:
+                raise TypeError(
+                    f"Command method '{func.__name__}' must have 4 parameters: "
+                    "(self, cmdr, body, cid)"
+                )
+        else:
+            # 일반 함수: (cmdr, body, cid) = 3개
+            if len(params) != 3:
+                raise TypeError(
+                    f"Command function '{func.__name__}' must have 3 parameters: "
+                    "(cmdr, body, cid)"
+                )
 
         # async 함수 강제
         if not inspect.iscoroutinefunction(func):
@@ -43,6 +62,7 @@ def command(_func=None, *, ident=None):
         # Commander.set_command에서 인식할 메타데이터
         setattr(func, "_psvc_command", True)
         setattr(func, "_psvc_ident", ident)
+        setattr(func, "_psvc_is_method", is_method)
         return func
 
     # @command  혹은  @command(ident="...") 둘 다 지원
@@ -66,14 +86,14 @@ class Commander(Component):
     def sock(self):
         return self._sock
 
-
     # == Setting ==
 
     async def bind(self, addr: str, port: int):
         await self._sock.bind(addr, port)
-    
+
     async def connect(self, addr: str, port: int):
-        await self._sock.connect(addr, port)
+        """서버에 연결하고 cid 반환"""
+        return await self._sock.connect(addr, port)
 
     def set_command(self, *cmd_funcs, ident=None):
         """
@@ -102,13 +122,25 @@ class Commander(Component):
             if not callable(func):
                 raise TypeError('Command must be callable.')
 
+            # 바인딩된 메서드(bound method)인지 확인
+            is_bound_method = inspect.ismethod(func)
+
             sig = inspect.signature(func)
             params = list(sig.parameters.values())
-            if len(params) != 3:
+
+            # 파라미터 개수 검증
+            # 바인딩된 메서드는 self가 이미 제외된 상태로 시그니처에 나타남
+            expected_params = 3
+            if not is_bound_method and len(params) > 0 and params[0].name == 'self':
+                # 언바운딩 메서드 (데코레이터 시점)
+                expected_params = 4
+
+            if len(params) != expected_params:
                 raise TypeError(
-                    f"Command function '{func.__name__}' must have 3 parameters: "
-                    "(cmdr, body, cid)"
+                    f"Command function '{func.__name__}' must have {expected_params} parameters, "
+                    f"got {len(params)}"
                 )
+
             if not inspect.iscoroutinefunction(func):
                 raise TypeError(
                     f"Command function '{func.__name__}' must be async "
@@ -128,12 +160,13 @@ class Commander(Component):
             if cur_ident in self._cmds:
                 raise ValueError('Ident is collided. (%s)' % (cur_ident, ))
 
-            # loop 변수 캡처 방지를 위해 _func 기본값으로 묶어둡니다.
+            # 핸들러 생성
+            # 바인딩된 메서드는 self가 자동 전달되므로 (cmdr, body, cid)만 전달
+            # 일반 함수는 Commander 인스턴스를 cmdr로 전달
             async def handler(body, cid, _func=func):
                 try:
                     return await _func(self, body, cid)
                 except Exception as e:
-                    self.l.exception(e)
                     raise
 
             self._cmds[cur_ident] = handler
@@ -191,6 +224,6 @@ class Commander(Component):
                 cmd_header = self._de.decode(msg)
                 await self.call_header(cmd_header, cid)
         except asyncio.CancelledError:
-            self.l.exception('Commander Error')
+            pass
         finally:
             await self._sock.detach()
