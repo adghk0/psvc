@@ -2,14 +2,13 @@ import asyncio
 import os
 import sys
 import subprocess
+import json
 
 from .comp import Component
 from .main import Service
 from .cmd import Commander, command
-
-
-def _version(s):
-    return tuple(map(int, s.split('.')))
+from .utils.version import compare_versions
+from .utils.checksum import verify_checksum
 
 
 class Releaser(Component):
@@ -58,20 +57,60 @@ class Releaser(Component):
         self.l.debug('Releaser commands registered')
 
     def get_version_list(self):
-        """릴리스 디렉토리에서 버전 목록 가져오기"""
+        """
+        status='approved'인 버전 목록만 반환 (Semantic versioning 정렬)
+        """
+        approved_versions = []
+
         try:
-            versions = [d for d in os.listdir(self.release_path)
-                       if os.path.isdir(os.path.join(self.release_path, d))]
-            return sorted(versions, key=_version)
+            for version_dir in os.listdir(self.release_path):
+                dir_path = os.path.join(self.release_path, version_dir)
+
+                if not os.path.isdir(dir_path):
+                    continue
+
+                # status.json 확인
+                status_file = os.path.join(dir_path, 'status.json')
+                if not os.path.exists(status_file):
+                    self.l.warning('No status.json in %s, skipping', version_dir)
+                    continue
+
+                with open(status_file, 'r', encoding='utf-8') as f:
+                    metadata = json.load(f)
+
+                # approved 상태만 포함
+                if metadata.get('status') == 'approved':
+                    approved_versions.append(version_dir)
+                else:
+                    self.l.debug('Version %s status=%s, skipping',
+                                version_dir, metadata.get('status'))
+
         except Exception as e:
             self.l.error('Failed to get version list: %s', e)
-            return []
+
+        # Semantic versioning으로 정렬
+        try:
+            approved_versions.sort(key=lambda v: tuple(map(int, v.split('.'))))
+        except ValueError as e:
+            self.l.warning('Some versions have invalid format: %s', e)
+
+        return approved_versions
 
     def get_latest_version(self):
-        """최신 버전 반환"""
+        """최신 버전 반환 (approved 버전 중)"""
         if not self.versions:
             return None
         return self.versions[-1]
+
+    def get_metadata(self, version: str) -> dict:
+        """특정 버전의 메타데이터 읽기"""
+        status_file = os.path.join(self.release_path, version, 'status.json')
+
+        if not os.path.exists(status_file):
+            raise FileNotFoundError(f'Metadata not found for version {version}')
+
+        with open(status_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
 
     def get_program_path(self, version):
         """특정 버전의 프로그램 파일 경로 반환"""
@@ -112,7 +151,7 @@ class Releaser(Component):
 
     @command(ident='__download_update__')
     async def _cmd_download_update(self, cmdr: Commander, body, cid):
-        """클라이언트가 특정 버전 다운로드 요청"""
+        """클라이언트가 특정 버전 다운로드 요청 (다중 파일 지원)"""
         version = body.get('version')
         self.l.info('Update download requested from cid=%d: version=%s', cid, version)
 
@@ -122,24 +161,48 @@ class Releaser(Component):
             return
 
         try:
-            program_path = self.get_program_path(version)
-            self.l.info('Sending program file: %s', program_path)
+            # 메타데이터 읽기
+            metadata = self.get_metadata(version)
+            files = metadata.get('files', [])
+
+            if not files:
+                raise ValueError(f'No files found in version {version}')
+
+            # 총 크기 계산
+            total_size = sum(f['size'] for f in files)
+
+            self.l.info('Sending %d files (total: %.2f MB) for version %s',
+                       len(files), total_size / 1024 / 1024, version)
 
             # 파일 전송 시작 알림
-            await cmdr.send_command('__download_start__',
-                                   {'version': version, 'filename': os.path.basename(program_path)},
-                                   cid)
+            await cmdr.send_command('__download_start__', {
+                'version': version,
+                'files': files,
+                'total_size': total_size,
+                'file_count': len(files)
+            }, cid)
 
-            # 파일 전송
-            await cmdr.sock().send_file(program_path, cid)
+            # 각 파일 순차 전송
+            for file_info in files:
+                file_path = os.path.join(self.release_path, version, file_info['path'])
+
+                if not os.path.exists(file_path):
+                    raise FileNotFoundError(f"File not found: {file_info['path']}")
+
+                self.l.debug('Sending file: %s (%d bytes)',
+                            file_info['path'], file_info['size'])
+
+                # 파일 전송
+                await cmdr.sock().send_file(file_path, cid)
 
             # 전송 완료 알림
             await cmdr.send_command('__download_complete__',
-                                   {'version': version}, cid)
-            self.l.info('Update download completed for cid=%d', cid)
+                                   {'version': version, 'file_count': len(files)}, cid)
+
+            self.l.info('Update download completed for cid=%d: %d files sent', cid, len(files))
 
         except Exception as e:
-            self.l.exception('Failed to send update file')
+            self.l.exception('Failed to send update files')
             await cmdr.send_command('__download_failed__',
                                    {'error': str(e)}, cid)
 
@@ -210,7 +273,7 @@ class Updater(Component):
         current = self.svc.version
         self.l.info('Version check: current=%s, latest=%s', current, latest)
 
-        return _version(latest) > _version(current)
+        return compare_versions(latest, current) > 0
 
     async def download_update(self, version=None, cid=1):
         """업데이트 다운로드"""
@@ -270,15 +333,59 @@ class Updater(Component):
 
     @command(ident='__download_start__')
     async def _cmd_download_start(self, cmdr: Commander, body, cid):
-        """다운로드 시작 알림"""
+        """다운로드 시작 알림 (다중 파일 지원)"""
         version = body.get('version')
-        filename = body.get('filename')
-        self.l.info('Download starting: version=%s, file=%s', version, filename)
+        files = body.get('files', [])
+        total_size = body.get('total_size', 0)
+        file_count = body.get('file_count', 0)
 
-        # 파일 수신
-        download_file = os.path.join(self.svc.path(self._download_path), filename)
-        self.l.info('Saving to: %s', download_file)
-        await cmdr.sock().recv_file(download_file, cid)
+        self.l.info('Download starting: version=%s, %d files (%.2f MB)',
+                   version, file_count, total_size / 1024 / 1024)
+
+        # 버전 디렉토리 생성
+        version_dir = os.path.join(self.svc.path(self._download_path), version)
+        os.makedirs(version_dir, exist_ok=True)
+
+        # 각 파일 순차 수신
+        for file_info in files:
+            file_path = file_info['path']
+            expected_checksum = file_info['checksum']
+            expected_size = file_info['size']
+
+            # 전체 경로 생성
+            full_path = os.path.join(version_dir, file_path)
+
+            # 하위 디렉토리 생성
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+
+            self.l.debug('Receiving file: %s (%d bytes)', file_path, expected_size)
+
+            try:
+                # 파일 수신
+                await cmdr.sock().recv_file(full_path, cid)
+
+                # 체크섬 검증
+                if not verify_checksum(full_path, expected_checksum):
+                    raise ValueError(f'Checksum verification failed for {file_path}')
+
+                # 파일 크기 검증
+                actual_size = os.path.getsize(full_path)
+                if actual_size != expected_size:
+                    raise ValueError(
+                        f'File size mismatch for {file_path}: '
+                        f'expected {expected_size}, got {actual_size}'
+                    )
+
+                self.l.debug('File verified: %s', file_path)
+
+            except Exception as e:
+                self.l.error('Failed to receive file %s: %s', file_path, e)
+                # 부분 다운로드 실패 시 정리
+                if os.path.exists(full_path):
+                    os.remove(full_path)
+                raise
+
+        self.l.info('All files received and verified for version %s', version)
 
     @command(ident='__download_complete__')
     async def _cmd_download_complete(self, cmdr: Commander, body, cid):

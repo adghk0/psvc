@@ -6,8 +6,11 @@ import sys
 import asyncio, aiofiles
 import signal
 import configparser
+import json
+from pathlib import Path
 
 from .comp import Component
+from .builder import Builder
 
 
 _version_conf = 'PSVC\\version'
@@ -124,6 +127,213 @@ class Service(Component, ABC):
         if os.path.isabs(path) or self._root_path is None:
             return path
         return os.path.join(self._root_path, path)
+
+# == Build & Release ==
+
+    def build(
+        self,
+        version: str,
+        spec_file: str = None,
+        release_path: str = None,
+        exclude_patterns: list = None,
+        **pyinstaller_options
+    ):
+        """
+        PyInstaller로 실행 파일 빌드
+
+        Args:
+            version: Semantic version (예: "1.0.0")
+            spec_file: PyInstaller spec 파일 경로
+            release_path: 릴리스 저장 경로 (기본: {root_path}/releases)
+            exclude_patterns: 제외할 파일 패턴 (기본: ['*.conf', '*.log'])
+            **pyinstaller_options: PyInstaller 추가 옵션
+
+        Returns:
+            빌드된 릴리스 디렉토리 경로
+
+        Example:
+            service = MyService('MyApp', __file__)
+            service.build(version='1.0.0', spec_file='my_app.spec')
+        """
+        if self._root_path is None:
+            raise RuntimeError('Root path is not set. Provide root_file in __init__')
+
+        builder = Builder(
+            service_name=self.name,
+            root_path=self._root_path,
+            release_path=release_path
+        )
+
+        version_dir = builder.build(
+            version=version,
+            spec_file=spec_file,
+            exclude_patterns=exclude_patterns,
+            **pyinstaller_options
+        )
+
+        self.l.info('Build completed: %s', version_dir)
+        return version_dir
+
+    def release(
+        self,
+        version: str,
+        approve: bool = False,
+        release_path: str = None,
+        release_notes: str = None,
+        rollback_target: str = None
+    ):
+        """
+        릴리스 관리 (승인/정보 확인)
+
+        Args:
+            version: 대상 버전
+            approve: True면 승인 처리, False면 정보만 표시
+            release_path: 릴리스 경로 (기본: {root_path}/releases)
+            release_notes: 릴리스 노트
+            rollback_target: 롤백 대상 버전
+
+        Returns:
+            메타데이터 딕셔너리
+
+        Example:
+            # 정보 확인
+            service.release(version='1.0.0')
+
+            # 승인 처리
+            service.release(
+                version='1.0.0',
+                approve=True,
+                release_notes='Bug fixes and improvements'
+            )
+        """
+        if self._root_path is None:
+            raise RuntimeError('Root path is not set. Provide root_file in __init__')
+
+        if release_path:
+            base_path = Path(release_path)
+        else:
+            base_path = Path(self._root_path) / 'releases'
+
+        version_dir = base_path / version
+        status_file = version_dir / 'status.json'
+
+        if not status_file.exists():
+            raise FileNotFoundError(
+                f"Version {version} not found. "
+                f"Build it first using service.build()"
+            )
+
+        # 메타데이터 읽기
+        with open(status_file, 'r', encoding='utf-8') as f:
+            metadata = json.load(f)
+
+        # 승인 처리
+        if approve:
+            print(f"\n=== Approving {self.name} v{version} ===")
+
+            metadata['status'] = 'approved'
+
+            if release_notes:
+                metadata['release_notes'] = release_notes
+
+            if rollback_target:
+                metadata['rollback_target'] = rollback_target
+
+            # 저장
+            with open(status_file, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+
+            print(f"✓ Version {version} has been approved")
+            self.l.info('Version %s approved', version)
+
+        # 정보 출력
+        print(f"\n=== Release Information ===")
+        print(f"  Version: {metadata['version']}")
+        print(f"  Status: {metadata['status']}")
+        print(f"  Build time: {metadata['build_time']}")
+        print(f"  Platform: {metadata['platform']}")
+        print(f"  Files: {len(metadata['files'])} files")
+        print(f"  Total size: {sum(f['size'] for f in metadata['files']) / 1024 / 1024:.2f} MB")
+
+        if metadata.get('release_notes'):
+            print(f"  Release notes: {metadata['release_notes']}")
+
+        if metadata.get('rollback_target'):
+            print(f"  Rollback target: {metadata['rollback_target']}")
+
+        return metadata
+
+    def rollback(
+        self,
+        from_version: str,
+        to_version: str,
+        release_path: str = None
+    ):
+        """
+        버전 롤백 (문제 버전 deprecated 처리)
+
+        Args:
+            from_version: 문제가 있는 버전 (deprecated 처리)
+            to_version: 되돌릴 버전
+            release_path: 릴리스 경로
+
+        Example:
+            # 1.0.0에 문제가 있어서 0.9.5로 롤백
+            service.rollback(from_version='1.0.0', to_version='0.9.5')
+        """
+        if self._root_path is None:
+            raise RuntimeError('Root path is not set. Provide root_file in __init__')
+
+        if release_path:
+            base_path = Path(release_path)
+        else:
+            base_path = Path(self._root_path) / 'releases'
+
+        print(f"\n=== Rolling back from v{from_version} to v{to_version} ===")
+
+        # 1. from_version을 deprecated 처리
+        from_dir = base_path / from_version
+        from_status_file = from_dir / 'status.json'
+
+        if not from_status_file.exists():
+            raise FileNotFoundError(f"Version {from_version} not found")
+
+        with open(from_status_file, 'r', encoding='utf-8') as f:
+            from_metadata = json.load(f)
+
+        from_metadata['status'] = 'deprecated'
+        from_metadata['rollback_target'] = to_version
+
+        with open(from_status_file, 'w', encoding='utf-8') as f:
+            json.dump(from_metadata, f, indent=2, ensure_ascii=False)
+
+        print(f"  ✓ Version {from_version} marked as deprecated")
+
+        # 2. to_version 확인
+        to_dir = base_path / to_version
+        to_status_file = to_dir / 'status.json'
+
+        if not to_status_file.exists():
+            raise FileNotFoundError(f"Rollback target {to_version} not found")
+
+        with open(to_status_file, 'r', encoding='utf-8') as f:
+            to_metadata = json.load(f)
+
+        if to_metadata['status'] != 'approved':
+            print(f"  Warning: Target version {to_version} is not approved")
+            print(f"  Current status: {to_metadata['status']}")
+
+        print(f"  ✓ Rollback target {to_version} is available")
+        print(f"\nRollback completed. Clients will use v{to_version}")
+
+        self.l.info('Rolled back from %s to %s', from_version, to_version)
+
+        return {
+            'from_version': from_version,
+            'to_version': to_version,
+            'from_metadata': from_metadata,
+            'to_metadata': to_metadata
+        }
 
 # == Config ==
 
