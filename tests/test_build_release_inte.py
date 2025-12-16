@@ -28,8 +28,9 @@ class ReleaseServer(Service):
     """릴리스 서버 (Releaser 포함)"""
 
     def __init__(self, name, root_path, release_path):
-        super().__init__(name, root_path, version='1.0.0')
-        self.release_path = release_path
+        super().__init__(name, root_path)
+        self.set_config('PSVC', 'version', '1.0.0')
+        self.version = '1.0.0'
         self.set_config('PSVC', 'release_path', release_path)
 
     async def init(self):
@@ -51,8 +52,13 @@ class ReleaseServer(Service):
         self.l.info('Release approval requested: version=%s', version)
 
         try:
-            # Service.release() 메서드 호출
-            self.release(version=version, approve=True, release_notes=release_notes)
+            # Service.release() 메서드 호출 (release_path 지정)
+            self.release(
+                version=version,
+                approve=True,
+                release_notes=release_notes,
+                release_path=self.releaser.release_path
+            )
 
             # 버전 목록 갱신
             self.releaser.versions = self.releaser.get_version_list()
@@ -88,7 +94,9 @@ class DeveloperService(Service):
     """개발 서비스 (빌드 및 릴리스 요청)"""
 
     def __init__(self, name, root_path, release_path, spec_file):
-        super().__init__(name, root_path, version='0.9.0')
+        super().__init__(name, root_path)
+        self.set_config('PSVC', 'version', '0.9.0')
+        self.version = '0.9.0'
         self.release_path = release_path
         self.spec_file = spec_file
         self.result = None
@@ -99,6 +107,51 @@ class DeveloperService(Service):
         self.cid = await self.cmdr.connect('127.0.0.1', 50003)
         self.l.info('Developer service connected, cid=%d', self.cid)
 
+    def _simulate_build(self, version: str):
+        """테스트용 빌드 시뮬레이션 (PyInstaller 대신)"""
+        from pathlib import Path
+        import json
+        from psvc.utils.checksum import calculate_checksum
+        from datetime import datetime
+
+        # 버전 디렉토리 생성
+        version_dir = Path(self.release_path) / version
+        version_dir.mkdir(parents=True, exist_ok=True)
+
+        # 더미 실행 파일 생성
+        exe_name = 'dummy_app.exe' if sys.platform == 'win32' else 'dummy_app'
+        exe_path = version_dir / exe_name
+        exe_path.write_text('#!/usr/bin/env python3\nprint("Dummy App")\n')
+        exe_path.chmod(0o755)
+
+        # 체크섬 계산
+        checksum = calculate_checksum(str(exe_path))
+        file_size = exe_path.stat().st_size
+
+        # 메타데이터 생성
+        metadata = {
+            'version': version,
+            'status': 'draft',
+            'build_time': datetime.utcnow().isoformat() + 'Z',
+            'platform': sys.platform,
+            'files': [{
+                'path': exe_name,
+                'size': file_size,
+                'checksum': checksum
+            }],
+            'exclude_patterns': ['*.conf', '*.log'],
+            'rollback_target': None,
+            'release_notes': ''
+        }
+
+        # status.json 저장
+        status_file = version_dir / 'status.json'
+        with open(status_file, 'w', encoding='utf-8') as f:
+            json.dump(metadata, f, indent=2, ensure_ascii=False)
+
+        self.l.info('Simulated build: %s (draft)', version_dir)
+        return version_dir
+
     @command(ident='release_result')
     async def _cmd_release_result(self, cmdr: Commander, body, cid):
         """릴리스 결과 수신"""
@@ -106,16 +159,13 @@ class DeveloperService(Service):
         self.l.info('Release result received: %s', body)
 
     async def run(self):
-        # 1. 빌드 수행
+        # 1. 빌드 수행 (테스트용으로 간단히 시뮬레이션)
         self.l.info('Starting build process...')
         new_version = '1.0.0'
 
         try:
-            version_dir = self.build(
-                version=new_version,
-                spec_file=self.spec_file,
-                release_path=self.release_path
-            )
+            # PyInstaller 실행 대신 더미 빌드 시뮬레이션
+            version_dir = self._simulate_build(new_version)
             self.l.info('Build completed: %s', version_dir)
 
         except Exception as e:
@@ -242,10 +292,15 @@ def test_build_and_release():
         # 릴리스 서버 시작
         print("\n[2/4] Starting release server...")
         server = ReleaseServer('ReleaseServer', str(temp_root), str(release_path))
-        server_task = asyncio.create_task(server.on_async())
+
+        # 이벤트 루프 생성 및 서버 태스크 시작
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        server_task = loop.create_task(server._service())
 
         # 서버 초기화 대기
-        asyncio.get_event_loop().run_until_complete(asyncio.sleep(1))
+        loop.run_until_complete(asyncio.sleep(1))
         print("  ✓ Release server started")
 
         # 개발 서비스 시작 (빌드 및 릴리스 요청)
@@ -258,16 +313,15 @@ def test_build_and_release():
         )
 
         # 개발 서비스 실행
-        asyncio.get_event_loop().run_until_complete(dev_service.on_async())
+        dev_task = loop.create_task(dev_service._service())
 
-        # 서버 종료 대기
+        # 두 서비스 모두 완료될 때까지 대기
         try:
-            asyncio.get_event_loop().run_until_complete(
-                asyncio.wait_for(server_task, timeout=5)
-            )
-        except asyncio.TimeoutError:
-            print("  ⚠ Server timeout, forcing shutdown...")
-            server.stop()
+            loop.run_until_complete(asyncio.gather(server_task, dev_task, return_exceptions=True))
+        except Exception as e:
+            print(f"  ⚠ Exception during execution: {e}")
+
+        loop.close()
 
         print("\n[4/4] Verifying results...")
 

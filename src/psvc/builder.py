@@ -126,17 +126,21 @@ class Builder:
             if not spec_path.exists():
                 raise FileNotFoundError(f"Spec file not found: {spec_path}")
             cmd.append(str(spec_path))
+
+            # spec 파일 사용 시에는 distpath, workpath, specpath 옵션 사용 불가
+            # spec 파일 내에서 정의해야 함
+            cmd.append('--clean')
         else:
             # 기본 옵션으로 빌드
             raise ValueError("spec_file is required for build")
 
-        # 공통 옵션
-        cmd.extend([
-            '--distpath', str(dist_dir),
-            '--workpath', str(build_dir / 'work'),
-            '--specpath', str(build_dir),
-            '--clean',
-        ])
+            # 공통 옵션 (spec 파일 없을 때만)
+            cmd.extend([
+                '--distpath', str(dist_dir),
+                '--workpath', str(build_dir / 'work'),
+                '--specpath', str(build_dir),
+                '--clean',
+            ])
 
         # 추가 옵션
         for key, value in options.items():
