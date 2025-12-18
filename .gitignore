@@ -1,9 +1,15 @@
 **/__pycache__/
 **/log/
+**.log
+.venv/
+.pytest_cache/
 
-kjutil/
 .rollback/
 
 dist/
 build/
+**.spec
 **.egg-info/
+
+tests/**.conf
+tests/**.log
