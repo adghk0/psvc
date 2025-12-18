@@ -13,3 +13,5 @@ build/
 
 tests/**.conf
 tests/**.log
+
+user_test/
