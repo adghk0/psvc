@@ -222,14 +222,31 @@ class Updater(Component):
     """
     _update_path_conf = 'PSVC\\update_path'
 
-    def __init__(self, svc: Service, commander: Commander, name='Updater', parent=None):
+    def __init__(
+        self,
+        svc: Service,
+        commander: Commander,
+        name='Updater',
+        parent=None,
+        timeout: float = 30.0
+    ):
         super().__init__(svc, name, parent)
         self._cmdr = commander
+        self._timeout = timeout
+
+        # 응답 데이터
         self._available_versions = []
         self._latest_version = None
-        self._download_path = self.svc.get_config(Updater._update_path_conf, None, 'updates')
+        self._download_status = None
+        self._download_error = None
 
-        # 다운로드 디렉토리 생성
+        # 🔒 동기화 이벤트 (blocking 제어용)
+        self._versions_received = asyncio.Event()
+        self._latest_received = asyncio.Event()
+        self._download_completed = asyncio.Event()
+
+        # 다운로드 경로
+        self._download_path = self.svc.get_config(Updater._update_path_conf, None, 'updates')
         full_download_path = self.svc.path(self._download_path)
         os.makedirs(full_download_path, exist_ok=True)
 
@@ -250,21 +267,64 @@ class Updater(Component):
         self.l.debug('Updater commands registered')
 
     async def fetch_versions(self, cid=1):
-        """서버로부터 사용 가능한 버전 목록 가져오기"""
+        """
+        🔒 서버로부터 사용 가능한 버전 목록 가져오기 (Blocking)
+
+        타임아웃 내에 응답을 기다립니다.
+        """
         self.l.info('Fetching available versions from server')
+
+        # 이벤트 초기화
+        self._versions_received.clear()
+        self._available_versions = []
+
+        # 요청 전송
         await self._cmdr.send_command('__request_versions__', {}, cid)
-        await asyncio.sleep(0.5)  # 응답 대기
-        return self._available_versions
+
+        # 🔒 응답 대기 (blocking)
+        try:
+            await asyncio.wait_for(
+                self._versions_received.wait(),
+                timeout=self._timeout
+            )
+            return self._available_versions
+        except asyncio.TimeoutError:
+            self.l.error('Timeout waiting for version list (%.1fs)', self._timeout)
+            raise TimeoutError(f'No response from server within {self._timeout}s')
 
     async def fetch_latest_version(self, cid=1):
-        """서버로부터 최신 버전 정보 가져오기"""
+        """
+        🔒 서버로부터 최신 버전 정보 가져오기 (Blocking)
+
+        타임아웃 내에 응답을 기다립니다.
+        """
         self.l.info('Fetching latest version from server')
+
+        # 이벤트 초기화
+        self._latest_received.clear()
+        self._latest_version = None
+
+        # 요청 전송
         await self._cmdr.send_command('__request_latest_version__', {}, cid)
-        await asyncio.sleep(0.5)  # 응답 대기
-        return self._latest_version
+
+        # 🔒 응답 대기 (blocking)
+        try:
+            await asyncio.wait_for(
+                self._latest_received.wait(),
+                timeout=self._timeout
+            )
+            return self._latest_version
+        except asyncio.TimeoutError:
+            self.l.error('Timeout waiting for latest version (%.1fs)', self._timeout)
+            raise TimeoutError(f'No response from server within {self._timeout}s')
 
     async def check_update(self, cid=1):
-        """업데이트 확인"""
+        """
+        업데이트 확인
+
+        Returns:
+            bool: 업데이트 가능 여부
+        """
         latest = await self.fetch_latest_version(cid)
         if latest is None:
             self.l.warning('No version information available from server')
@@ -276,7 +336,20 @@ class Updater(Component):
         return compare_versions(latest, current) > 0
 
     async def download_update(self, version=None, cid=1):
-        """업데이트 다운로드"""
+        """
+        🔒 업데이트 다운로드 (Blocking)
+
+        다운로드 완료까지 대기합니다.
+
+        Args:
+            version: 다운로드할 버전 (None이면 최신 버전)
+            cid: 연결 ID
+
+        Raises:
+            ValueError: 버전 정보 없음
+            TimeoutError: 다운로드 타임아웃
+            RuntimeError: 다운로드 실패
+        """
         if version is None:
             version = self._latest_version
 
@@ -284,18 +357,45 @@ class Updater(Component):
             raise ValueError('No version specified and no latest version available')
 
         self.l.info('Requesting download for version %s', version)
+
+        # 이벤트 및 상태 초기화
+        self._download_completed.clear()
+        self._download_status = None
+        self._download_error = None
+
+        # 다운로드 요청
         await self._cmdr.send_command('__download_update__', {'version': version}, cid)
 
+        # 🔒 다운로드 완료 대기 (blocking)
+        try:
+            await asyncio.wait_for(
+                self._download_completed.wait(),
+                timeout=self._timeout * 3  # 다운로드는 더 긴 타임아웃
+            )
+
+            # 에러 체크
+            if self._download_error:
+                raise RuntimeError(f'Download failed: {self._download_error}')
+
+            self.l.info('✓ Download completed: %s', self._download_status)
+            return self._download_status
+
+        except asyncio.TimeoutError:
+            self.l.error('Timeout waiting for download (%.1fs)', self._timeout * 3)
+            raise TimeoutError(f'Download not completed within {self._timeout * 3}s')
+
     async def download_and_install(self, cid=1, restart=True):
-        """업데이트 다운로드 및 설치 (재시작)"""
+        """
+        업데이트 다운로드 및 설치 (재시작)
+
+        Returns:
+            bool: 업데이트 수행 여부
+        """
         if not await self.check_update(cid):
             self.l.info('Already up to date')
             return False
 
         await self.download_update(cid=cid)
-
-        # 다운로드 완료 대기 (실제로는 이벤트 기반으로 처리해야 함)
-        await asyncio.sleep(2)
 
         if restart:
             self.restart_service()
@@ -324,12 +424,16 @@ class Updater(Component):
         """서버로부터 버전 목록 수신"""
         self._available_versions = body
         self.l.info('Received %d versions: %s', len(body), body)
+        # 🔓 이벤트 설정 (blocking 해제)
+        self._versions_received.set()
 
     @command(ident='__receive_latest_version__')
     async def _cmd_receive_latest_version(self, cmdr: Commander, body, cid):
         """서버로부터 최신 버전 정보 수신"""
         self._latest_version = body
         self.l.info('Received latest version: %s', body)
+        # 🔓 이벤트 설정 (blocking 해제)
+        self._latest_received.set()
 
     @command(ident='__download_start__')
     async def _cmd_download_start(self, cmdr: Commander, body, cid):
@@ -392,11 +496,24 @@ class Updater(Component):
         """다운로드 완료 알림"""
         version = body.get('version')
         self.l.info('Download completed: version=%s', version)
-        # 여기서 설치 로직 추가 가능
+
+        # 상태 저장
+        self._download_status = version
+        self._download_error = None
+
+        # 🔓 이벤트 설정 (blocking 해제)
+        self._download_completed.set()
 
     @command(ident='__download_failed__')
     async def _cmd_download_failed(self, cmdr: Commander, body, cid):
         """다운로드 실패 알림"""
         error = body.get('error')
         self.l.error('Download failed: %s', error)
+
+        # 에러 저장
+        self._download_status = None
+        self._download_error = error
+
+        # 🔓 이벤트 설정 (blocking 해제)
+        self._download_completed.set()
 
