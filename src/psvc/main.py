@@ -346,7 +346,53 @@ class Service(Component, ABC):
 
 # == Running ==
 
+    def _apply_pending_update(self):
+        """
+        대기 중인 업데이트 적용 (Windows .new 파일 처리)
+
+        재시작 시 .new 파일이 있으면 자동으로 교체합니다.
+        Windows 환경에서 실행 중 파일 잠금 문제 해결용.
+        """
+        if sys.platform != 'win32':
+            return  # Linux는 직접 덮어쓰기 사용
+
+        # 현재 실행 파일 디렉토리
+        if getattr(sys, 'frozen', False):
+            exe_dir = os.path.dirname(sys.executable)
+        else:
+            exe_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+
+        # .new 파일 찾기
+        updated_count = 0
+        for item in os.listdir(exe_dir):
+            if item.endswith('.new'):
+                new_file = os.path.join(exe_dir, item)
+                target_file = new_file[:-4]  # .new 제거
+
+                try:
+                    # 기존 파일 백업
+                    if os.path.exists(target_file):
+                        old_file = target_file + '.old'
+                        if os.path.exists(old_file):
+                            os.remove(old_file)
+                        os.rename(target_file, old_file)
+                        self.l.debug('Backed up: %s -> %s', target_file, old_file)
+
+                    # .new 파일을 실제 파일로 교체
+                    os.rename(new_file, target_file)
+                    self.l.info('Updated: %s', target_file)
+                    updated_count += 1
+
+                except Exception as e:
+                    self.l.error('Failed to apply update for %s: %s', item, e)
+
+        if updated_count > 0:
+            self.l.info('Applied %d pending update(s)', updated_count)
+
     def on(self):
+        # 대기 중인 업데이트 적용 (Windows .new 파일 처리)
+        self._apply_pending_update()
+
         signal.signal(signal.SIGTERM, self.stop)
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)

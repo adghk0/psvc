@@ -384,6 +384,169 @@ class Updater(Component):
             self.l.error('Timeout waiting for download (%.1fs)', self._timeout * 3)
             raise TimeoutError(f'Download not completed within {self._timeout * 3}s')
 
+    def _get_install_paths(self):
+        """
+        설치 경로 확인
+
+        Returns:
+            tuple: (실행 디렉토리, 실행 파일명)
+        """
+        # 서비스의 root_path가 설정되어 있으면 사용
+        if self.svc._root_path:
+            exe_dir = self.svc._root_path
+            # PyInstaller 환경인지 확인
+            if getattr(sys, 'frozen', False):
+                exe_name = os.path.basename(sys.executable)
+            else:
+                exe_name = os.path.basename(sys.argv[0])
+        # PyInstaller 환경 확인
+        elif getattr(sys, 'frozen', False):
+            # PyInstaller로 패키징된 실행 파일
+            exe_path = sys.executable
+            exe_dir = os.path.dirname(exe_path)
+            exe_name = os.path.basename(exe_path)
+        else:
+            # 개발 환경 (Python 스크립트)
+            exe_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+            exe_name = os.path.basename(sys.argv[0])
+
+        return exe_dir, exe_name
+
+    def _create_backup(self):
+        """
+        현재 버전 백업
+
+        Returns:
+            str: 백업 디렉토리 경로
+        """
+        import shutil
+        from datetime import datetime
+
+        exe_dir, exe_name = self._get_install_paths()
+        exe_path = os.path.join(exe_dir, exe_name)
+
+        if not os.path.exists(exe_path):
+            self.l.warning('Current executable not found: %s', exe_path)
+            return None
+
+        # 백업 디렉토리 생성 (타임스탬프)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_dir = os.path.join(exe_dir, f'backup_{timestamp}')
+        os.makedirs(backup_dir, exist_ok=True)
+
+        # 현재 버전의 모든 파일 백업
+        for item in os.listdir(exe_dir):
+            item_path = os.path.join(exe_dir, item)
+            if os.path.isfile(item_path) and not item.startswith('backup_'):
+                backup_path = os.path.join(backup_dir, item)
+                shutil.copy2(item_path, backup_path)
+                self.l.debug('Backed up: %s', item)
+
+        self.l.info('Backup created: %s', backup_dir)
+        return backup_dir
+
+    def _deploy_files(self, version):
+        """
+        다운로드된 파일을 설치 디렉토리로 배포
+
+        Args:
+            version: 배포할 버전
+
+        Windows: .new 확장자로 저장 (재시작 시 교체)
+        Linux: 직접 덮어쓰기
+        """
+        import shutil
+
+        # 다운로드 경로
+        download_dir = os.path.join(self.svc.path(self._download_path), version)
+        if not os.path.exists(download_dir):
+            raise FileNotFoundError(f'Downloaded version not found: {download_dir}')
+
+        # 설치 경로
+        exe_dir, _ = self._get_install_paths()
+        self.l.info('Deploying from %s to %s', download_dir, exe_dir)
+
+        # 다운로드된 모든 파일 배포
+        deployed_count = 0
+        for root, dirs, files in os.walk(download_dir):
+            for file_name in files:
+                src_path = os.path.join(root, file_name)
+                rel_path = os.path.relpath(src_path, download_dir)
+
+                if sys.platform == 'win32':
+                    # Windows: .new 확장자로 저장
+                    dest_path = os.path.join(exe_dir, rel_path + '.new')
+                else:
+                    # Linux: 직접 덮어쓰기
+                    dest_path = os.path.join(exe_dir, rel_path)
+
+                # 디렉토리 생성
+                dest_dir = os.path.dirname(dest_path)
+                if dest_dir:  # dest_dir가 빈 문자열이 아닐 때만
+                    os.makedirs(dest_dir, exist_ok=True)
+
+                # 파일 복사
+                self.l.info('Copying: %s -> %s', src_path, dest_path)
+                shutil.copy2(src_path, dest_path)
+
+                # 실행 권한 유지 (Linux)
+                if sys.platform != 'win32':
+                    src_stat = os.stat(src_path)
+                    os.chmod(dest_path, src_stat.st_mode)
+
+                deployed_count += 1
+
+        self.l.info('Deployed %d file(s) for version %s', deployed_count, version)
+
+    def _update_version_config(self, new_version):
+        """
+        Config 파일의 버전 정보 업데이트
+
+        Args:
+            new_version: 새 버전
+        """
+        self.svc.set_config('PSVC', 'version', new_version)
+        self.svc.version = new_version
+        self.l.info('Version updated in config: %s', new_version)
+
+    async def install_update(self, version=None):
+        """
+        다운로드된 업데이트 설치
+
+        Args:
+            version: 설치할 버전 (None이면 다운로드된 최신 버전)
+
+        Raises:
+            FileNotFoundError: 다운로드된 버전 없음
+            RuntimeError: 설치 실패
+        """
+        if version is None:
+            version = self._download_status or self._latest_version
+
+        if version is None:
+            raise ValueError('No version to install')
+
+        self.l.info('Installing update: %s', version)
+
+        # 백업 생성
+        backup_dir = self._create_backup()
+
+        try:
+            # 파일 배포
+            self._deploy_files(version)
+
+            # Config 버전 업데이트
+            self._update_version_config(version)
+
+            self.l.info('Installation completed: %s', version)
+
+        except Exception as e:
+            self.l.error('Installation failed: %s', e)
+            # 롤백 (필요시)
+            if backup_dir and os.path.exists(backup_dir):
+                self.l.warning('Rollback not implemented, backup saved at: %s', backup_dir)
+            raise RuntimeError(f'Installation failed: {e}') from e
+
     async def download_and_install(self, cid=1, restart=True):
         """
         업데이트 다운로드 및 설치 (재시작)
@@ -395,28 +558,38 @@ class Updater(Component):
             self.l.info('Already up to date')
             return False
 
+        # 다운로드
         await self.download_update(cid=cid)
 
+        # 설치
+        await self.install_update()
+
+        # 재시작
         if restart:
-            self.restart_service()
+            await self.restart_service()
 
         return True
 
-    def restart_service(self):
-        """서비스 재시작"""
-        self.l.info('Restarting service for update...')
+    async def restart_service(self):
+        """서비스 재시작 (안전한 종료 후 새 프로세스 시작)"""
+        self.l.info('Preparing to restart for update...')
 
-        # 현재 실행 파일 경로
+        # 1. 새 프로세스 시작 함수 정의
+        def start_new_process(executable, args):
+            """종료 후 새 프로세스 시작"""
+            if sys.platform == 'win32':
+                subprocess.Popen([executable] + args)
+            else:
+                subprocess.Popen([executable] + args, start_new_session=True)
+
+        # 2. closer로 등록 (on() 종료 시 실행됨)
         executable = sys.executable
+        args = sys.argv
+        self.svc.append_closer(start_new_process, [executable, args])
+        self.l.info('New process scheduled to start after shutdown')
 
-        # 새 프로세스로 재시작
-        if sys.platform == 'win32':
-            subprocess.Popen([executable] + sys.argv)
-        else:
-            subprocess.Popen([executable] + sys.argv,
-                           start_new_session=True)
-
-        # 현재 서비스 종료
+        # 3. 서비스 중지 (destroy()는 _service의 finally 블록에서 자동 호출됨)
+        self.l.info('Stopping current service')
         self.svc.stop()
 
     @command(ident='__receive_versions__')
