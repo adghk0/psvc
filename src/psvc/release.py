@@ -88,9 +88,10 @@ class Releaser(Component):
         except Exception as e:
             self.l.error('Failed to get version list: %s', e)
 
-        # Semantic versioning으로 정렬
+        # Semantic versioning으로 정렬 (Major.Minor.Patch 또는 Major.Minor 지원)
         try:
-            approved_versions.sort(key=lambda v: tuple(map(int, v.split('.'))))
+            from .utils.version import parse_version
+            approved_versions.sort(key=lambda v: parse_version(v))
         except ValueError as e:
             self.l.warning('Some versions have invalid format: %s', e)
 

@@ -1,65 +1,254 @@
+
 import logging
-from abc import ABC, abstractmethod
 import traceback
-import os
-import sys
-import asyncio, aiofiles
+import os, sys
+import asyncio
 import signal
+from pathlib import Path
+
+from abc import ABC, abstractmethod
+from collections.abc import Callable
+from typing import Any
+
 import configparser
 import json
-from pathlib import Path
+import argparse
 
 from .comp import Component
 from .builder import Builder
 
 
-_version_conf = 'PSVC\\version'
-_default_conf_path = 'psvc.conf'
-
 class Config(Component):
+    """서비스 설정 관리 컴포넌트 (JSON 기반)"""
+
     def __init__(self, svc, config_file, name='Config'):
         super().__init__(svc, name)
-        self._config = configparser.ConfigParser()
+
+        # 설정 파일 경로 결정
         if config_file is not None:
-            self._config_file = self.svc.path(config_file)
+            original_file = self.svc.path(config_file)
         else:
-            self._config_file = self.svc.path(_default_conf_path)
-        self._config.read(self._config_file)
+            original_file = self.svc.path(Service._default_conf_file)
 
-    def set_config(self, section: str, key: str, value):
+        # INI/JSON 경로 분리
+        self._ini_file = original_file
+        self._json_file = self._get_json_path(original_file)
+
+        # 설정 로드
+        self._config = self._load_config()
+
+    def _get_json_path(self, file_path: str) -> str:
+        """설정 파일 경로를 JSON 경로로 변환"""
+        if file_path.endswith('.conf'):
+            return file_path.replace('.conf', '.json')
+        elif file_path.endswith('.ini'):
+            return file_path.replace('.ini', '.json')
+        else:
+            return file_path + '.json'
+
+    def _load_config(self) -> dict:
+        """설정 파일 로드 (JSON 우선, 없으면 INI 마이그레이션)"""
+        import json
+
+        # 1. JSON 파일이 존재하면 로드
+        if os.path.exists(self._json_file):
+            try:
+                with open(self._json_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except json.JSONDecodeError as e:
+                self.l.error('Failed to load JSON config (%s): %s', self._json_file, e)
+                # JSON 파싱 실패 시 INI에서 재생성 시도
+                if os.path.exists(self._ini_file):
+                    return self._migrate_from_ini()
+                return {}
+
+        # 2. INI 파일이 존재하면 마이그레이션
+        if os.path.exists(self._ini_file):
+            return self._migrate_from_ini()
+
+        # 3. 둘 다 없으면 빈 설정
+        return {}
+
+    def _migrate_from_ini(self) -> dict:
+        """INI 파일을 JSON으로 변환"""
+        self.l.info('Migrating config: %s -> %s', self._ini_file, self._json_file)
+
+        parser = configparser.ConfigParser()
+        parser.read(self._ini_file, encoding='utf-8')
+
+        # INI를 dict로 변환
+        config = {}
+        for section in parser.sections():
+            config[section] = dict(parser.items(section))
+
+        # JSON으로 저장
+        self._save_config(config)
+
+        # INI 파일에 마이그레이션 안내 추가
+        self._mark_ini_as_migrated()
+
+        return config
+
+    def _mark_ini_as_migrated(self):
+        """INI 파일 상단에 마이그레이션 안내 추가"""
+        if not os.path.exists(self._ini_file):
+            return
+
+        with open(self._ini_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # 이미 마크가 있는지 확인
+        if '# This file is parsed to' in content:
+            return
+
+        # 상단에 안내 추가
+        header = f'# This file is parsed to {self._json_file}\n'
+        header += '# Please edit the JSON file instead.\n\n'
+
+        with open(self._ini_file, 'w', encoding='utf-8') as f:
+            f.write(header + content)
+
+    def _save_config(self, config=None):
+        """설정을 JSON 파일로 저장"""
+        import json
+
+        if config is None:
+            config = self._config
+
+        with open(self._json_file, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+
+    def _parse_value(self, value, dtype=None):
+        """값을 지정된 타입으로 파싱
+
+        Args:
+            value: 파싱할 값
+            dtype: 목표 타입 (None, str, int, float, bool, list, dict 또는 callable)
+
+        Returns:
+            파싱된 값
+        """
+        # 타입 지정이 없으면 원본 반환
+        if dtype is None:
+            return value
+
+        # 기본 타입 변환
+        type_converters = {
+            str: lambda v: str(v),
+            int: lambda v: int(v),
+            float: lambda v: float(v),
+        }
+
+        if dtype in type_converters:
+            return type_converters[dtype](value)
+
+        # bool 타입 처리 (문자열 "true", "false" 등 지원)
+        if dtype == bool:
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, str):
+                return value.lower() in ('true', '1', 'yes', 'on')
+            return bool(value)
+
+        # list 타입 처리 (쉼표 구분 문자열 지원)
+        if dtype == list:
+            if isinstance(value, list):
+                return value
+            if isinstance(value, str):
+                return [item.strip() for item in value.split(',') if item.strip()]
+            return list(value)
+
+        # dict 타입 처리
+        if dtype == dict:
+            if isinstance(value, dict):
+                return value
+            raise ValueError(f'Cannot convert {type(value).__name__} to dict')
+
+        # 사용자 정의 타입 (callable)
+        return dtype(value)
+
+    def set_config(self, section: str, key: str, value, dtype=None):
+        """설정 값을 저장합니다.
+
+        Args:
+            section: 섹션 이름
+            key: 키 이름
+            value: 설정 값
+            dtype: 데이터 타입 (str, int, float, bool, list, dict 또는 callable)
+        """
+        # 섹션이 없으면 생성
         if section not in self._config:
-            self._config.add_section(section)
-        self._config.set(section, key, value)
-        if self._config_file:
-            with open(self._config_file, 'w') as af:
-                self._config.write(af)
+            self._config[section] = {}
 
-    def get_config(self, section: str, key: str, default=None):
+        # 타입 변환 후 저장
+        self._config[section][key] = self._parse_value(value, dtype)
+        self._save_config()
+
+    def get_config(self, section: str, key: str = None, default=None, dtype=None):
+        """설정 값을 반환합니다.
+
+        Args:
+            section: 섹션 이름 (또는 'section\\key' 형식)
+            key: 키 이름 (None이면 섹션 전체 반환)
+            default: 기본값 (없을 경우 자동으로 설정)
+            dtype: 데이터 타입 (str, int, float, bool, list, dict 또는 callable)
+
+        Returns:
+            설정 값 (key가 None이면 섹션 dict)
+
+        Raises:
+            KeyError: 섹션 또는 키가 없고 default도 None인 경우
+        """
+        # 하위 호환성: 'section\\key' 형식 지원
         if key is None and '\\' in section:
             section, key = section.split('\\', 1)
-        try:
-            sec = self._config[section]
-        except KeyError:
-            if default is None or key is None:
-                raise KeyError('Section is not exist %s\\' % (section))
-            else:
-                self.set_config(section, key, default)
-                return default
+
+        # 섹션 없음
+        if section not in self._config:
+            if default is not None and key is not None:
+                self.set_config(section, key, default, dtype)
+                return self._parse_value(default, dtype)
+            raise KeyError(f'Section does not exist: {section}')
+
+        # 섹션 전체 반환
         if key is None:
-            return sec
-        elif key not in sec:
-            if default is None:
-                raise KeyError('Config is not exist %s\\%s' % (section, key))
-            else:
-                self.set_config(section, key, default)
-                return default
-        return sec[key]
+            return self._config[section]
+
+        # 키 없음
+        if key not in self._config[section]:
+            if default is not None:
+                self.set_config(section, key, default, dtype)
+                return self._parse_value(default, dtype)
+            raise KeyError(f'Config does not exist: {section}\\{key}')
+
+        # 값 반환 (타입 변환)
+        return self._parse_value(self._config[section][key], dtype)
     
 
 class Service(Component, ABC):
-    _log_format = '%(asctime)s : %(name)s [%(levelname)s] %(message)s - %(lineno)s'
+    _default_conf_file = 'psvc.conf'
+    _version_conf = 'PSVC\\version'
+    _log_conf_path = 'PSVC\\log_format'
+    _default_log_format = '%(asctime)s : %(name)s [%(levelname)s] %(message)s - %(lineno)s'
+    _log_levels = {
+            'CRITICAL': logging.CRITICAL,
+            'ERROR': logging.ERROR,
+            'WARNING': logging.WARNING,
+            'INFO': logging.INFO,
+            'DEBUG': logging.DEBUG,
+            'NOTSET': logging.NOTSET,
+        }
 
-    def __init__(self, name='Service', root_file=None, config_file=None, level=logging.INFO):
+    def __init__(self, name='Service', root_file=None, config_file=None, level=None):
+        """
+        파이썬 서비스 인스턴스를 생성합니다.
+        
+        :param self: 서비스 인스턴스
+        :param name: 서비스 이름
+        :param root_file: 루트 파일 경로
+        :param config_file: 설정 파일 경로
+        :param level: 로그 레벨
+        """
         Component.__init__(self, None, name)
         self._sigterm = asyncio.Event()
         self._loop = None
@@ -67,16 +256,110 @@ class Service(Component, ABC):
         self._closers = []
         self._fh = None
         self.status = None
-        self.level = level
-        
-        self.set_root_path(root_file)
-        self.set_logger(self.level)
-        self.l.info('=======================START=======================')
-        self._config_file = config_file
-        self._config = Config(self, self._config_file)
-        self.version = self.get_config(_version_conf, None, '0.0')
 
-# == Setting == 
+        self._set_root_path(root_file)
+        self.config_file = config_file
+        self._set_config_file(self.config_file)
+        self.args = self._parse_args(sys.argv[1:])
+
+        if self.args.hasattr('config_file') and self.args.config_file is not None:
+            self._set_config_file(self.args.config_file)
+        self.level = self.args.log_level if self.args.log_level else level
+
+        # 로거 설정
+        self._set_logger(self.level)
+
+        # 시작 로그
+        self.l.info('='*50)
+        if level is None:
+            self.l.warning('unused log level, set to INFO, %s', level)
+        self.l.info('Service Created %s' % (self))
+
+# == Status ==
+
+    def _parse_args(self, argv=None):
+        parser = argparse.ArgumentParser()
+        subparsers = parser.add_subparsers(dest='mode')
+        
+        p_run = subparsers.add_parser('run', help='Run the service')
+        p_run.add_argument('-l', '--log_level', dest='log_level', help='Log level', default=None)
+        p_run.add_argument('-c', '--config_file', dest='config_file', help='Config file path', default=None)
+    
+        p_build = subparsers.add_parser('build', help='Build the service')
+        p_build.add_argument('-f', '--spec_file', dest='spec_file', help='PyInstaller spec file',
+                             default=self.get_config(Service._build_spec_file_conf, None, ''))
+        p_build.add_argument('-p', '--release_path', dest='release_path', help='Release path',
+                             default=self.get_config(Service._build_release_path_conf, None, 'releases'))
+        p_build.add_argument('-e', '--exclude-patterns', nargs='*', dest='exclude_patterns', help='Patterns to exclude from the build',
+                             default=self.get_config(Service._build_exclude_patterns_conf, None, ['*.conf', '*.log']))
+        p_build.add_argument('-v', '--version', dest='version', help='Version to build', required=True, )
+        p_build.add_argument('-o', '--pyinstaller-options', nargs='*', dest='pyinstaller_options', help='Additional PyInstaller options as key=value pairs',
+                             default=self.get_config(Service._build_pyinstaller_options_conf, None, []))
+
+        p_release = subparsers.add_parser('release', help='Release the service')
+        p_release.add_argument('-a', '--approve', action='store_true', help='Approve the release')
+        p_release.add_argument('-p','--release_path', dest='release_path', help='Release path',
+                             default=self.get_config(Service._build_release_path_conf, None, 'releases'))
+        p_release.add_argument('-n', '--release_notes', dest='release_notes', help='Release notes', default=None)
+        p_release.add_argument('-r', '--rollback_target', dest='rollback_target', help='Rollback target version', default=None)
+        p_release.add_argument('-v', '--version', dest='version', help='Version to release', required=True, ) 
+
+        p_apply = subparsers.add_parser('apply', help='Apply pending updates on startup')
+        p_apply.add_argument('--root_file', dest='root_file', help='Root file path', default=None, required=True)
+        p_apply.add_argument('--config_file', dest='config_file', help='Config file path', default=None)
+
+        parser.set_defaults(mode='run')
+        return parser.parse_args(argv)
+   
+    def _set_root_path(self, root_file):
+        if getattr(sys, 'frozen', False):
+            self._root_path = os.path.abspath(os.path.dirname(sys.executable))
+        elif root_file:
+            self._root_path = os.path.abspath(os.path.dirname(root_file))
+        else:
+            raise RuntimeError('Root path is not set. Provide root_file in __init__')
+    
+    def _set_config_file(self, config_file):
+        if hasattr(self, '_config'):
+            del self._config
+        self._config = Config(self, config_file)
+        self.version = self.get_config(Service._version_conf, None, '0.0.0')
+
+    def _set_logger(self, level):
+        if self.level is None:
+            level = self.get_config('PSVC', 'log_level', '')
+            d_level = Service._log_levels[level] if level in Service._log_levels else \
+                int(level) if level.isdigit() else None
+            self.level = d_level if d_level is not None else logging.INFO
+        self.log_format = self.get_config(Service._log_conf_path, None, Service._default_log_format)
+
+        # 로그 핸들러 설정
+        self._fh = logging.FileHandler(self.path(self.name+'.log'))
+        self._fh.setLevel(level)
+        self._fh.setFormatter(logging.Formatter(self.log_format))
+        logging.basicConfig(level=level, force=True, format=self.log_format)
+        self.l = logging.getLogger(name=self.name)
+        self.l.addHandler(self._fh)
+
+    def _set_status(self, status: str):
+        self.l.info('Status=%s', status)
+        self.status = status
+
+    def path(self, path):
+        if os.path.isabs(path) or self._root_path is None:
+            return path
+        return os.path.join(self._root_path, path)
+    
+# == Config ==
+
+    def set_config(self, section: str, key: str, value):
+        self._config.set_config(section, key, value)
+
+    def get_config(self, section: str, key: str, default=None):
+        return self._config.get_config(section, key, default)
+
+
+# == Operation Task Management ==
     
     def append_task(self, loop:asyncio.AbstractEventLoop, coro, name):
         self.l.debug('Append Task - %s', name)
@@ -97,39 +380,28 @@ class Service(Component, ABC):
                 pass
             self._tasks.remove(task)
 
-    def append_closer(self, closer, args: list):
-        self._closers.append((closer, args))
+    def append_closer(self, closer: Callable[..., Any], args: list[Any]) -> None:
+        """
+        서비스 종료시 호출할 함수를 등록합니다.
+        
+        :param closer: 종료시 호출할 함수
+        :type closer: Callable[..., Any]
+        :param args: 함수에 전달할 인자 리스트
+        :type args: list[Any]
+        """
+        if not callable(closer):
+            raise TypeError("closer is not callable.")
+        if not isinstance(args, (list, tuple)):
+            raise TypeError("args must be a list or tuple.")
+        self._closers.append((closer, list(args)))
 
-# == Status ==
-
-    def set_status(self, status: str):
-        self.l.info('Status=%s', status)
-        self.status = status
-
-    def set_logger(self, level):
-        self._fh = logging.FileHandler(self.path(self.name+'.log'))
-        self._fh.setLevel(level)
-        self._fh.setFormatter(logging.Formatter(Service._log_format))
-        logging.basicConfig(level=level, force=True,
-                            format=Service._log_format)
-        self.l = logging.getLogger(name=self.name)
-        self.l.addHandler(self._fh)
-
-    def set_root_path(self, root_file):
-        if not os.path.basename(sys.executable).startswith('python'):
-            self._root_path = os.path.abspath(os.path.dirname(sys.executable))
-        elif root_file:
-            self._root_path = os.path.abspath(os.path.dirname(root_file))
-        else:
-            self._root_path = None
-
-    def path(self, path):
-        if os.path.isabs(path) or self._root_path is None:
-            return path
-        return os.path.join(self._root_path, path)
 
 # == Build & Release ==
-
+    _build_spec_file_conf = 'PSVC-build\\spec_file'
+    _build_release_path_conf = 'PSVC-build\\release_path'
+    _build_exclude_patterns_conf = 'PSVC-build\\exclude_patterns'
+    _build_pyinstaller_options_conf = 'PSVC-build\\pyinstaller_options'
+    
     def build(
         self,
         version: str,
@@ -335,28 +607,14 @@ class Service(Component, ABC):
             'to_metadata': to_metadata
         }
 
-# == Config ==
-
-    def set_config(self, section: str, key: str, value):
-        self._config.set_config(section, key, value)
-
-    def get_config(self, section: str, key: str, default=None):
-        return self._config.get_config(section, key, default)
-
+    def apply(self):
+        # TODO : 구현
+        pass
 
 # == Running ==
-
+    
+    
     def _apply_pending_update(self):
-        """
-        대기 중인 업데이트 적용 (Windows .new 파일 처리)
-
-        재시작 시 .new 파일이 있으면 자동으로 교체합니다.
-        Windows 환경에서 실행 중 파일 잠금 문제 해결용.
-        """
-        if sys.platform != 'win32':
-            return  # Linux는 직접 덮어쓰기 사용
-
-        # 현재 실행 파일 디렉토리
         if getattr(sys, 'frozen', False):
             exe_dir = os.path.dirname(sys.executable)
         else:
@@ -389,35 +647,84 @@ class Service(Component, ABC):
         if updated_count > 0:
             self.l.info('Applied %d pending update(s)', updated_count)
 
+    
     def on(self):
-        # 대기 중인 업데이트 적용 (Windows .new 파일 처리)
-        self._apply_pending_update()
+        self.l.info('PyService Start %s', self)
 
+        
+        
+        if not getattr(sys, 'frozen', False):
+            if self.args.mode == 'build':
+                self.build(
+                    spec_file=self.args.spec_file,
+                    release_path=self.args.release_path,
+                    version=self.args.version,
+                    exclude_patterns=self.args.exclude_patterns
+                    , **{k: v for k, v in (opt.split('=', 2) for opt in self.args.pyinstaller_options if '=' in opt)}
+                )
+                return 0
+            elif self.args.mode == 'release':
+                self.release(
+                    version=self.args.version,
+                    approve=self.args.approve,
+                    release_path=self.args.release_path,
+                    release_notes=self.args.release_notes,
+                    rollback_target=self.args.rollback_target
+                )
+                return 0
+        
+        if self.args.mode == 'apply':
+            self.apply(
+                root_file=self.args.root_file,
+                config_file=self.args.config_file
+            )
+        elif self.args.mode == 'run':
+            self._run(
+                
+            )
+        else:
+            if self.args.mode in ('build', 'release'):
+                self.l.error('You can not build or Release in released file.')
+            else:
+                self.l.error('Unknown mode: %s', self.args.mode)
+            return 1
+        
+        self.l.info('PyService Stopped %s', self)
+        return 0
+
+    def _run(self):
+        # Signal 핸들러 등록
         signal.signal(signal.SIGTERM, self.stop)
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
 
-        self.l.info('PyService Start %s', self)
+        # 메인 서비스 작업 추가
         self.append_task(self._loop, self._service(), 'ServiceWork')
         try:
             self._loop.run_until_complete(asyncio.gather(*self._tasks, return_exceptions=True))
         except KeyboardInterrupt as i:
-            self.l.info('Stopping by KeyBoardInterrupt')
+            self.l.info('Keyboard Interrupt received. Stopping service...')
         finally:
+            # 모든 작업 취소 및 정리
+            self.l.info('Cleaning up tasks...')
             for t in self._tasks:
                 t.cancel()
             self._loop.run_until_complete(asyncio.gather(*self._tasks, return_exceptions=True))
-        self._loop.close()
+        self._loop.close()   
 
-        for closer, args in self._closers:
-            closer(*args)
+        # 서비스 종료 작업 처리
+        try:
+            for closer, args in self._closers:
+                closer(*args)
+        except Exception as e:
+            self.l.error('Error during in closer - %s%s: %s', closer.__name__, str(args), e)
 
     def stop(self, signum=None, frame=None):
         """서비스 중지. signal 핸들러로도 사용 가능"""
         self._sigterm.set()
 
     async def _service(self):
-        self.set_status('Initting')
+        self._set_status('Initting')
         try:
             await self.init()
         except asyncio.CancelledError as c:
@@ -432,7 +739,7 @@ class Service(Component, ABC):
 
         try:
             if not self._sigterm.is_set():
-                self.set_status('Running')
+                self._set_status('Running')
                 while not self._sigterm.is_set():
                     await self.run()
         except asyncio.CancelledError as c:
@@ -442,13 +749,14 @@ class Service(Component, ABC):
             self.l.error(traceback.format_exc())
 
         finally:
-            self.set_status('Stopping')
+            self._set_status('Stopping')
             try:
                 await self.destroy()
             except Exception as e:
                 self.l.error('== Error occurred while destorying. ==')
                 self.l.error(traceback.format_exc())
-            self.set_status('Stopped')
+            self._set_status('Stopped')
+
 
 # == User Defined == 
 
@@ -462,7 +770,9 @@ class Service(Component, ABC):
     async def destroy(self):
         await asyncio.sleep(0.1)
 
+
 # == Repr ==
 
     def __repr__(self):
         return '<%s> - %s' % (self.name, self.status)
+    
