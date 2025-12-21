@@ -65,7 +65,8 @@ class Releaser(Component):
         self._cmdr.set_command(
             self._cmd_request_versions,
             self._cmd_request_latest_version,
-            self._cmd_download_update
+            self._cmd_download_update,
+            self._cmd_force_update
         )
         self.l.debug('Releaser 명령어 등록됨')
 
@@ -271,6 +272,54 @@ class Releaser(Component):
             await cmdr.send_command('__download_failed__',
                                    {'error': str(e)}, cid)
 
+    @command(ident='__force_update__')
+    async def _cmd_force_update(self, cmdr: Commander, body, cid):
+        """
+        원격에서 특정 버전으로 강제 업데이트 명령
+
+        서버가 클라이언트에게 특정 버전으로 업데이트하도록 강제합니다.
+        클라이언트는 이 명령을 받으면 자동으로 다운로드 및 재시작을 수행합니다.
+
+        Args:
+            cmdr: Commander 인스턴스
+            body: 요청 본문
+                {
+                    'version': str,  # 강제 배포할 버전 (필수)
+                    'restart': bool  # 즉시 재시작 여부 (기본: True)
+                }
+            cid: 클라이언트 연결 ID
+
+        Raises:
+            ValueError: 버전이 존재하지 않을 때
+        """
+        version = body.get('version')
+        restart = body.get('restart', True)
+
+        self.l.info('cid=%d에 강제 업데이트 명령 전송: version=%s, restart=%s',
+                   cid, version, restart)
+
+        # 버전 검증
+        if version not in self.versions:
+            error_msg = f'버전 {version}이(가) approved 목록에 없음 (사용 가능: {self.versions})'
+            self.l.error(error_msg)
+            await cmdr.send_command('__update_failed__',
+                                   {'error': error_msg}, cid)
+            return
+
+        # 클라이언트에게 업데이트 명령 전송
+        try:
+            await cmdr.send_command('__apply_update__', {
+                'version': version,
+                'restart': restart
+            }, cid)
+
+            self.l.info('cid=%d에 강제 업데이트 명령 전송 완료', cid)
+
+        except Exception as e:
+            self.l.exception('강제 업데이트 명령 전송 실패')
+            await cmdr.send_command('__update_failed__',
+                                   {'error': str(e)}, cid)
+
 
 class Updater(Component):
     """
@@ -337,7 +386,8 @@ class Updater(Component):
             self._cmd_receive_latest_version,
             self._cmd_download_start,
             self._cmd_download_complete,
-            self._cmd_download_failed
+            self._cmd_download_failed,
+            self._cmd_apply_update
         )
         self.l.debug('Updater 명령어 등록됨')
 
@@ -678,22 +728,26 @@ class Updater(Component):
         return True
 
     async def restart_service(self):
-        """서비스 재시작 (안전한 종료 후 새 프로세스 시작)"""
+        """서비스 재시작 (안전한 종료 후 apply 모드로 새 프로세스 시작)"""
         self.l.info('업데이트를 위한 재시작 준비 중...')
 
-        # 1. 새 프로세스 시작 함수 정의
-        def start_new_process(executable, args):
-            """종료 후 새 프로세스 시작"""
+        # 1. apply 모드로 새 프로세스 시작 함수 정의
+        def start_apply_mode(executable):
+            """종료 후 apply 모드로 새 프로세스 시작"""
+            # apply 모드로 실행 (saved_args.json이 자동으로 로드됨)
+            apply_args = [executable, 'apply']
+
+            self.l.info('apply 모드로 재시작: %s', apply_args)
+
             if sys.platform == 'win32':
-                subprocess.Popen([executable] + args)
+                subprocess.Popen(apply_args)
             else:
-                subprocess.Popen([executable] + args, start_new_session=True)
+                subprocess.Popen(apply_args, start_new_session=True)
 
         # 2. closer로 등록 (on() 종료 시 실행됨)
         executable = sys.executable
-        args = sys.argv
-        self.svc.append_closer(start_new_process, [executable, args])
-        self.l.info('종료 후 새 프로세스 시작 예약됨')
+        self.svc.append_closer(start_apply_mode, [executable])
+        self.l.info('종료 후 apply 모드로 재시작 예약됨')
 
         # 3. 서비스 중지 (destroy()는 _service의 finally 블록에서 자동 호출됨)
         self.l.info('현재 서비스 중지 중')
@@ -802,12 +856,34 @@ class Updater(Component):
             body: 완료 정보 (version 포함)
             cid: 클라이언트 연결 ID (미사용)
         """
+        from datetime import datetime
+
         version = body.get('version')
         self.l.info('다운로드 완료: version=%s', version)
 
         # 상태 저장
         self._download_status = version
         self._download_error = None
+
+        # sys.argv 저장 (다운로드 완료 후)
+        try:
+            download_dir = os.path.join(self.svc.path(self._download_path), version)
+
+            saved_args = {
+                'argv': sys.argv,
+                'version': version,
+                'timestamp': datetime.now().isoformat()
+            }
+
+            args_file = os.path.join(download_dir, 'saved_args.json')
+            with open(args_file, 'w', encoding='utf-8') as f:
+                json.dump(saved_args, f, indent=2, ensure_ascii=False)
+
+            self.l.info('sys.argv 저장됨: %s', args_file)
+            self.l.debug('저장된 인자: %s', sys.argv)
+        except Exception as e:
+            self.l.error('sys.argv 저장 실패: %s', e)
+            # 저장 실패해도 다운로드는 성공으로 처리 (apply 시 기본값 사용)
 
         # 🔓 이벤트 설정 (blocking 해제)
         self._download_completed.set()
@@ -831,4 +907,54 @@ class Updater(Component):
 
         # 🔓 이벤트 설정 (blocking 해제)
         self._download_completed.set()
+
+    @command(ident='__apply_update__')
+    async def _cmd_apply_update(self, cmdr: Commander, body, cid):
+        """
+        원격 업데이트 명령 수신 (서버에서 강제 업데이트)
+
+        서버로부터 강제 업데이트 명령을 받으면 자동으로:
+        1. 지정된 버전 다운로드
+        2. 재시작 (apply 모드로 전환)
+
+        Args:
+            cmdr: Commander 인스턴스 (미사용)
+            body: 업데이트 정보
+                {
+                    'version': str,  # 업데이트할 버전
+                    'restart': bool  # 즉시 재시작 여부 (기본: True)
+                }
+            cid: 클라이언트 연결 ID
+        """
+        version = body.get('version')
+        restart = body.get('restart', True)
+
+        self.l.info('서버로부터 강제 업데이트 명령 수신: version=%s, restart=%s',
+                   version, restart)
+
+        try:
+            # 1. 버전 다운로드
+            self.l.info('버전 %s 다운로드 시작', version)
+            success = await self.download_update(version=version, cid=cid)
+
+            if not success:
+                raise RuntimeError(f'버전 {version} 다운로드 실패: {self._download_error}')
+
+            self.l.info('버전 %s 다운로드 완료', version)
+
+            # 2. 재시작 (apply 모드로 전환)
+            if restart:
+                self.l.info('apply 모드로 재시작 중')
+                await self.restart_service()
+            else:
+                self.l.info('다운로드 완료 (재시작 보류)')
+
+        except Exception as e:
+            self.l.exception('강제 업데이트 처리 실패')
+            # 에러 응답 (선택 사항)
+            try:
+                await cmdr.send_command('__update_failed__',
+                                       {'error': str(e)}, cid)
+            except Exception:
+                pass  # 에러 응답 실패는 무시
 

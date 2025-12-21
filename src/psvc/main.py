@@ -4,6 +4,7 @@ import traceback
 import os, sys
 import asyncio
 import signal
+import subprocess
 from pathlib import Path
 
 from abc import ABC, abstractmethod
@@ -790,15 +791,133 @@ class Service(Component, ABC):
             'to_metadata': to_metadata
         }
 
-    def apply(self):
+    def apply(self, root_file=None, config_file=None):
         """
-        대기 중인 업데이트 적용
+        다운로드된 버전을 root_path로 복사 (자기 자신 교체)
 
-        Note:
-            TODO: 구현 예정
+        업데이트 시퀀스의 핵심 단계:
+        1. saved_args.json에서 버전 정보 및 원래 실행 인자 로드
+        2. 다운로드된 파일들을 root_path로 복사
+        3. 권한 복구 (Linux)
+        4. run 모드로 재시작
+
+        Args:
+            root_file: 루트 파일 경로 (미사용, 호환성 유지)
+            config_file: 설정 파일 경로 (미사용, 호환성 유지)
         """
-        # TODO : 구현
-        pass
+        import shutil
+
+        self.l.info('apply 모드 시작: 업데이트 적용 중')
+
+        # 1. update_path 확인
+        update_path_conf = 'PSVC\\update_path'
+        update_path = self.get_config(update_path_conf, None, 'updates')
+        full_update_path = self.path(update_path)
+
+        if not os.path.exists(full_update_path):
+            self.l.error('업데이트 경로가 존재하지 않음: %s', full_update_path)
+            raise FileNotFoundError(f'업데이트 경로 없음: {full_update_path}')
+
+        # 2. 최신 다운로드 버전 찾기 (saved_args.json이 있는 디렉토리)
+        version_dir = None
+        saved_args_path = None
+
+        for entry in os.listdir(full_update_path):
+            potential_dir = os.path.join(full_update_path, entry)
+            potential_args_file = os.path.join(potential_dir, 'saved_args.json')
+
+            if os.path.isdir(potential_dir) and os.path.exists(potential_args_file):
+                version_dir = potential_dir
+                saved_args_path = potential_args_file
+                break
+
+        if not version_dir or not saved_args_path:
+            self.l.error('saved_args.json을 찾을 수 없음 (업데이트 파일 없음)')
+            raise FileNotFoundError('업데이트할 버전을 찾을 수 없음')
+
+        # 3. saved_args.json 로드
+        with open(saved_args_path, 'r', encoding='utf-8') as f:
+            saved_args = json.load(f)
+
+        version = saved_args.get('version', 'unknown')
+        original_argv = saved_args.get('argv', [])
+        timestamp = saved_args.get('timestamp', '')
+
+        self.l.info('업데이트 적용: 버전 %s (생성: %s)', version, timestamp)
+        self.l.info('저장된 인자: %s', original_argv)
+
+        # 4. 파일 복사 (version_dir의 모든 파일 → root_path)
+        deployed_count = 0
+
+        for root, _, files in os.walk(version_dir):
+            for file_name in files:
+                # saved_args.json은 복사하지 않음
+                if file_name == 'saved_args.json':
+                    continue
+
+                src_path = os.path.join(root, file_name)
+                rel_path = os.path.relpath(src_path, version_dir)
+                dest_path = os.path.join(self._root_path, rel_path)
+
+                # 디렉토리 생성
+                dest_dir = os.path.dirname(dest_path)
+                if dest_dir:
+                    os.makedirs(dest_dir, exist_ok=True)
+
+                # 파일 복사 (메타데이터 보존)
+                self.l.info('복사: %s → %s', rel_path, dest_path)
+                shutil.copy2(src_path, dest_path)
+
+                # 권한 복구 (Linux)
+                if sys.platform != 'win32':
+                    src_stat = os.stat(src_path)
+                    os.chmod(dest_path, src_stat.st_mode)
+
+                deployed_count += 1
+
+        self.l.info('버전 %s에 대해 %d개 파일 배포 완료', version, deployed_count)
+
+        # 5. 검증 (기본적인 파일 존재 확인)
+        if deployed_count == 0:
+            self.l.error('배포된 파일이 없음 - 업데이트 실패')
+            raise RuntimeError('업데이트 파일이 비어있음')
+
+        # 6. run 모드로 재시작
+        def start_run_mode(executable, original_argv):
+            """run 모드로 재시작"""
+            # original_argv[0]은 프로그램 경로
+            # mode가 'apply'인 경우 제거하고 기본 run 모드로 실행
+            run_args = [executable]
+
+            # 원래 인자에서 mode 관련 부분 제거
+            skip_next = False
+            for arg in original_argv[1:]:  # argv[0]은 프로그램 경로
+                if skip_next:
+                    skip_next = False
+                    continue
+
+                if arg in ('apply', 'build', 'release'):
+                    # mode 인자는 제외
+                    continue
+                elif arg in ('--root_file', '--config_file', '--version_dir'):
+                    # 다음 인자도 건너뛰기
+                    skip_next = True
+                    continue
+
+                run_args.append(arg)
+
+            self.l.info('run 모드로 재시작: %s', run_args)
+            subprocess.Popen(run_args, start_new_session=(sys.platform != 'win32'))
+
+        try:
+            start_run_mode(sys.executable, original_argv)
+            self.l.info('apply 완료, 프로세스 종료')
+        except Exception as e:
+            self.l.error('재시작 실패: %s', e)
+            raise
+
+        # apply 프로세스 종료
+        sys.exit(0)
 
 
 # == Running ==
