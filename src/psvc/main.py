@@ -278,7 +278,7 @@ class Service(Component, ABC):
     추상 베이스 클래스입니다. 사용자는 이 클래스를 상속하여
     init(), run(), destroy() 메서드를 구현해야 합니다.
     """
-    _default_conf_file = 'psvc.conf'
+    _default_conf_file = 'psvc.json'
     _version_conf = 'PSVC\\version'
     _log_conf_path = 'PSVC\\log_format'
     _default_log_format = '%(asctime)s : %(name)s [%(levelname)s] %(message)s - %(lineno)s'
@@ -317,17 +317,15 @@ class Service(Component, ABC):
         self._set_config_file(self.config_file)
         self.args = self._parse_args(sys.argv[1:])
 
-        if self.args.hasattr('config_file') and self.args.config_file is not None:
+        if hasattr(self.args, 'config_file') and self.args.config_file is not None:
             self._set_config_file(self.args.config_file)
-        self.level = self.args.log_level if self.args.log_level else level
+        self.level = self.args.log_level if hasattr(self.args, 'log_level') and self.args.log_level else level
 
         # 로거 설정
         self._set_logger(self.level)
 
         # 시작 로그
         self.l.info('='*50)
-        if level is None:
-            self.l.warning('사용되지 않는 로그 레벨, INFO로 설정, %s', level)
         self.l.info('서비스 생성됨 %s' % (self))
 
 # == Status ==
@@ -351,19 +349,19 @@ class Service(Component, ABC):
     
         p_build = subparsers.add_parser('build', help='Build the service')
         p_build.add_argument('-f', '--spec_file', dest='spec_file', help='PyInstaller spec file',
-                             default=self.get_config(Service._build_spec_file_conf, None, ''))
+                             default=None)
         p_build.add_argument('-p', '--release_path', dest='release_path', help='Release path',
-                             default=self.get_config(Service._build_release_path_conf, None, 'releases'))
+                             default=None)
         p_build.add_argument('-e', '--exclude-patterns', nargs='*', dest='exclude_patterns', help='Patterns to exclude from the build',
-                             default=self.get_config(Service._build_exclude_patterns_conf, None, ['*.conf', '*.log']))
+                             default=None)
         p_build.add_argument('-v', '--version', dest='version', help='Version to build', required=True, )
         p_build.add_argument('-o', '--pyinstaller-options', nargs='*', dest='pyinstaller_options', help='Additional PyInstaller options as key=value pairs',
-                             default=self.get_config(Service._build_pyinstaller_options_conf, None, []))
+                             default=None)
 
         p_release = subparsers.add_parser('release', help='Release the service')
         p_release.add_argument('-a', '--approve', action='store_true', help='Approve the release')
         p_release.add_argument('-p','--release_path', dest='release_path', help='Release path',
-                             default=self.get_config(Service._build_release_path_conf, None, 'releases'))
+                             default=None)
         p_release.add_argument('-n', '--release_notes', dest='release_notes', help='Release notes', default=None)
         p_release.add_argument('-r', '--rollback_target', dest='rollback_target', help='Rollback target version', default=None)
         p_release.add_argument('-v', '--version', dest='version', help='Version to release', required=True, ) 
@@ -413,16 +411,21 @@ class Service(Component, ABC):
         """
         if self.level is None:
             level = self.get_config('PSVC', 'log_level', '')
+
+        if type(level) == str:
             d_level = Service._log_levels[level] if level in Service._log_levels else \
                 int(level) if level.isdigit() else None
-            self.level = d_level if d_level is not None else logging.INFO
+            if d_level is None:
+                d_level = logging.INFO
+            self.level = d_level
+
         self.log_format = self.get_config(Service._log_conf_path, None, Service._default_log_format)
 
         # 로그 핸들러 설정
         self._fh = logging.FileHandler(self.path(self.name+'.log'))
-        self._fh.setLevel(level)
+        self._fh.setLevel(self.level)
         self._fh.setFormatter(logging.Formatter(self.log_format))
-        logging.basicConfig(level=level, force=True, format=self.log_format)
+        logging.basicConfig(level=self.level, force=True, format=self.log_format)
         self.l = logging.getLogger(name=self.name)
         self.l.addHandler(self._fh)
 
@@ -433,7 +436,7 @@ class Service(Component, ABC):
         Args:
             status: 상태 문자열 (Initting, Running, Stopping, Stopped)
         """
-        self.l.info('상태=%s', status)
+        self.l.info('status: ---- %s ----', status)
         self.status = status
 
     def path(self, path):
@@ -773,47 +776,8 @@ class Service(Component, ABC):
         # TODO : 구현
         pass
 
+
 # == Running ==
-    
-    
-    def _apply_pending_update(self):
-        """
-        대기 중인 업데이트 적용 (.new 파일 처리)
-
-        Windows에서 .new 확장자를 가진 파일을 실제 파일로 교체합니다.
-        """
-        if getattr(sys, 'frozen', False):
-            exe_dir = os.path.dirname(sys.executable)
-        else:
-            exe_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
-
-        # .new 파일 찾기
-        updated_count = 0
-        for item in os.listdir(exe_dir):
-            if item.endswith('.new'):
-                new_file = os.path.join(exe_dir, item)
-                target_file = new_file[:-4]  # .new 제거
-
-                try:
-                    # 기존 파일 백업
-                    if os.path.exists(target_file):
-                        old_file = target_file + '.old'
-                        if os.path.exists(old_file):
-                            os.remove(old_file)
-                        os.rename(target_file, old_file)
-                        self.l.debug('백업됨: %s -> %s', target_file, old_file)
-
-                    # .new 파일을 실제 파일로 교체
-                    os.rename(new_file, target_file)
-                    self.l.info('업데이트됨: %s', target_file)
-                    updated_count += 1
-
-                except Exception as e:
-                    self.l.error('%s 업데이트 적용 실패: %s', item, e)
-
-        if updated_count > 0:
-            self.l.info('%d개의 대기 중인 업데이트 적용됨', updated_count)
-
     
     def on(self):
         """
@@ -826,23 +790,35 @@ class Service(Component, ABC):
         """
         self.l.info('PyService 시작 %s', self)
 
-        
-        
         if not getattr(sys, 'frozen', False):
             if self.args.mode == 'build':
+                # Resolve defaults from config only when in build mode
+                spec_file = self.args.spec_file if self.args.spec_file is not None else \
+                            self.get_config(Service._build_spec_file_conf, None, '')
+                release_path = self.args.release_path if self.args.release_path is not None else \
+                               self.get_config(Service._build_release_path_conf, None, 'releases')
+                exclude_patterns = self.args.exclude_patterns if self.args.exclude_patterns is not None else \
+                                   self.get_config(Service._build_exclude_patterns_conf, None, ['*.conf', '*.log'])
+                pyinstaller_options = self.args.pyinstaller_options if self.args.pyinstaller_options is not None else \
+                                      self.get_config(Service._build_pyinstaller_options_conf, None, [])
+
                 self.build(
-                    spec_file=self.args.spec_file,
-                    release_path=self.args.release_path,
+                    spec_file=spec_file,
+                    release_path=release_path,
                     version=self.args.version,
-                    exclude_patterns=self.args.exclude_patterns
-                    , **{k: v for k, v in (opt.split('=', 2) for opt in self.args.pyinstaller_options if '=' in opt)}
+                    exclude_patterns=exclude_patterns,
+                    **{k: v for k, v in (opt.split('=', 2) for opt in pyinstaller_options if '=' in opt)}
                 )
                 return 0
             elif self.args.mode == 'release':
+                # Resolve defaults from config only when in release mode
+                release_path = self.args.release_path if self.args.release_path is not None else \
+                               self.get_config(Service._build_release_path_conf, None, 'releases')
+
                 self.release(
                     version=self.args.version,
                     approve=self.args.approve,
-                    release_path=self.args.release_path,
+                    release_path=release_path,
                     release_notes=self.args.release_notes,
                     rollback_target=self.args.rollback_target
                 )
@@ -857,11 +833,11 @@ class Service(Component, ABC):
             self._run(
                 
             )
+        elif self.args.mode in ('build', 'release'):
+            self.l.error('릴리스된 파일에서는 빌드 또는 릴리스할 수 없습니다.')
+            return 2
         else:
-            if self.args.mode in ('build', 'release'):
-                self.l.error('릴리스된 파일에서는 빌드 또는 릴리스할 수 없습니다.')
-            else:
-                self.l.error('알 수 없는 모드: %s', self.args.mode)
+            self.l.error('알 수 없는 모드: %s', self.args.mode)
             return 1
 
         self.l.info('PyService 중지됨 %s', self)
@@ -936,7 +912,7 @@ class Service(Component, ABC):
                 while not self._sigterm.is_set():
                     await self.run()
         except asyncio.CancelledError as c:
-            self.l.error('실행 중 서비스가 취소됨.')
+            pass # 서비스 취소 처리
         except Exception as e:
             self.l.error('== 실행 중 오류 발생 ==')
             self.l.error(traceback.format_exc())
