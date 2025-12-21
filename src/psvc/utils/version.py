@@ -35,13 +35,21 @@ def parse_version(version_str: str) -> Tuple[int, int, int]:
 
     # 둘 다 아니면 에러
     raise ValueError(
-        f"Invalid version format: '{version_str}'. "
-        f"Expected format: MAJOR.MINOR.PATCH (e.g., 1.0.0) or MAJOR.MINOR (e.g., 1.0)"
+        f"잘못된 버전 형식: '{version_str}'. "
+        f"예상 형식: MAJOR.MINOR.PATCH (예: 1.0.0) 또는 MAJOR.MINOR (예: 1.0)"
     )
 
 
 def is_valid_version(version_str: str) -> bool:
-    """버전 문자열이 유효한지 확인"""
+    """
+    버전 문자열이 유효한지 확인
+
+    Args:
+        version_str: 검증할 버전 문자열
+
+    Returns:
+        bool: 유효하면 True, 아니면 False
+    """
     try:
         parse_version(version_str)
         return True

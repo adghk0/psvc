@@ -72,7 +72,21 @@ def command(_func=None, *, ident=None):
 
 
 class Commander(Component):
+    """
+    명령 기반 통신 관리자
+
+    Socket 위에서 JSON 명령어 기반 통신을 제공합니다.
+    """
+
     def __init__(self, svc: Service, name='Commander', parent=None):
+        """
+        Commander 초기화
+
+        Args:
+            svc: 서비스 인스턴스
+            name: 컴포넌트 이름
+            parent: 부모 컴포넌트
+        """
         super().__init__(svc, name, parent)
         self._sock = Socket(self.svc, name+'-Sock', parent=self)
         self._en = json.JSONEncoder()
@@ -81,46 +95,69 @@ class Commander(Component):
         self._handle_lock = asyncio.Lock()
         self._call_stack = []
         self._task = self.svc.append_task(asyncio.get_running_loop(), self._receive(), name+'-Res')
-        self.l.debug('new Commander attached')
+        self.l.debug('새 Commander 연결됨')
 
     def sock(self):
+        """
+        내부 Socket 인스턴스 반환
+
+        Returns:
+            Socket: 내부 소켓 인스턴스
+        """
         return self._sock
 
     # == Setting ==
 
     async def bind(self, addr: str, port: int):
+        """
+        서버로 바인딩
+
+        Args:
+            addr: 바인딩할 주소
+            port: 포트 번호
+        """
         await self._sock.bind(addr, port)
 
     async def connect(self, addr: str, port: int):
-        """서버에 연결하고 cid 반환"""
+        """
+        서버에 연결하고 cid 반환
+
+        Args:
+            addr: 서버 주소
+            port: 포트 번호
+
+        Returns:
+            int: 연결 ID
+        """
         return await self._sock.connect(addr, port)
 
     def set_command(self, *cmd_funcs, ident=None):
         """
-        cmd_funcs:
-            - @command 로 장식된 async 함수들
-            - 또는 동일한 형식의 async 함수들
+        명령 함수 등록
 
-        ident:
-            - 단일 함수 등록 시에만 사용 가능
-            - None 이면:
-                - @command(ident="...") 값을 우선 사용
-                - 없으면 함수명을 ident로 사용
+        Args:
+            *cmd_funcs: @command로 장식된 async 함수들 또는 동일한 형식의 async 함수들
+            ident: 명령 식별자 (단일 함수 등록 시에만 사용 가능)
+                   None이면 @command(ident="...") 값을 우선 사용하고,
+                   없으면 함수명을 ident로 사용
 
-        return:
-            - 함수 1개 등록: ident (str)
-            - 함수 여러 개 등록: ident 튜플 (tuple[str, ...])
+        Returns:
+            str | tuple: 함수 1개 등록 시 ident (str), 여러 개 등록 시 ident 튜플
+
+        Raises:
+            ValueError: 함수가 하나도 없거나, 여러 함수에 ident를 지정했을 때
+            TypeError: 함수가 callable이 아니거나, 파라미터 개수가 맞지 않을 때
         """
         if not cmd_funcs:
-            raise ValueError('At least one command function is required.')
+            raise ValueError('최소 하나의 명령 함수가 필요합니다.')
         
         if len(cmd_funcs) > 1 and ident is not None:
-            raise ValueError('ident can be used only with a single command function.')
+            raise ValueError('ident는 단일 명령 함수에만 사용할 수 있습니다.')
 
         registered = []
         for func in cmd_funcs:
             if not callable(func):
-                raise TypeError('Command must be callable.')
+                raise TypeError('명령은 callable이어야 합니다.')
 
             # 바인딩된 메서드(bound method)인지 확인
             is_bound_method = inspect.ismethod(func)
@@ -158,7 +195,7 @@ class Commander(Component):
                     cur_ident = getattr(func, '__name__', repr(func))
 
             if cur_ident in self._cmds:
-                raise ValueError('Ident is collided. (%s)' % (cur_ident, ))
+                raise ValueError('Ident가 충돌합니다. (%s)' % (cur_ident, ))
 
             # 핸들러 생성
             # 바인딩된 메서드는 self가 자동 전달되므로 (cmdr, body, cid)만 전달
@@ -176,32 +213,70 @@ class Commander(Component):
     
     @property
     def call_stack(self):
+        """
+        현재 호출 스택
+
+        Returns:
+            tuple: 호출 중인 명령 ident의 튜플
+        """
         return tuple(self._call_stack)
     
 
     # == Execute ==
 
     async def _execute(self, ident, body, cid):
+        """
+        명령 실행 (내부용)
+
+        Args:
+            ident: 명령 식별자
+            body: 명령 본문
+            cid: 연결 ID
+
+        Raises:
+            KeyError: 명령을 찾을 수 없을 때
+        """
         self._call_stack.append(ident)
         try:
             handler = self._cmds[ident]
         except KeyError:
             self._call_stack.pop()
-            raise KeyError('Command not found: %s' % (ident, ))
-        
+            raise KeyError('명령을 찾을 수 없음: %s' % (ident, ))
+
         try:
             return await handler(body, cid)
         finally:
             self._call_stack.pop()
 
     async def call(self, ident, body, cid):
+        """
+        명령 호출
+
+        Args:
+            ident: 명령 식별자
+            body: 명령 본문
+            cid: 연결 ID
+
+        Returns:
+            명령 핸들러의 반환값
+        """
         if not self._call_stack:
             async with self._handle_lock:
                 return await self._execute(ident, body, cid)
         else:
             return await self._execute(ident, body, cid)
-    
+
     async def call_header(self, cmd_header, cid):
+        """
+        명령 헤더로부터 명령 호출
+
+        Args:
+            cmd_header: 명령 헤더 딕셔너리 (_ident, _body 포함)
+            cid: 연결 ID
+
+        Returns:
+            명령 핸들러의 반환값
+        """
         ident = cmd_header['_ident']
         body = cmd_header['_body']
         return await self.call(ident, body, cid)
@@ -210,13 +285,26 @@ class Commander(Component):
     # == Communication ==
 
     async def send_command(self, cmd_ident, body, cid):
+        """
+        명령 전송
+
+        Args:
+            cmd_ident: 명령 식별자
+            body: 명령 본문
+            cid: 연결 ID
+        """
         cmd_header = {
             '_ident': cmd_ident,
             '_body': body,
         }
         await self._sock.send_str(self._en.encode(cmd_header), cid)
-       
+
     async def _receive(self):
+        """
+        명령 수신 루프 (내부용)
+
+        소켓으로부터 명령을 수신하고 처리합니다.
+        """
         try:
             while True:
                 cid, msg = await self._sock.recv()

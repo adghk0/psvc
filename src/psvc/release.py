@@ -31,18 +31,31 @@ class Releaser(Component):
     _release_path_conf = 'PSVC\\release_path'
 
     def __init__(self, svc: Service, commander: Commander, name='Releaser', parent=None):
+        """
+        Releaser 초기화
+
+        Args:
+            svc: 서비스 인스턴스
+            commander: Commander 인스턴스 (명령어 등록용)
+            name: 컴포넌트 이름
+            parent: 부모 컴포넌트
+
+        Raises:
+            KeyError: release_path 설정이 없을 때
+            ValueError: release_path가 존재하지 않는 디렉토리일 때
+        """
         super().__init__(svc, name, parent)
         self._cmdr = commander
         try:
             self.release_path = self.svc.get_config(Releaser._release_path_conf, None)
         except KeyError:
-            raise KeyError('Release path is not configured (%s)' % (Releaser._release_path_conf,))
+            raise KeyError('릴리스 경로가 설정되지 않음 (%s)' % (Releaser._release_path_conf,))
 
         if not os.path.isdir(self.release_path):
-            raise ValueError('Release path does not exist: %s' % self.release_path)
+            raise ValueError('릴리스 경로가 존재하지 않음: %s' % self.release_path)
 
         self.versions = self.get_version_list()
-        self.l.info('Releaser initialized with %d versions: %s', len(self.versions), self.versions)
+        self.l.info('Releaser 초기화됨 (%d개 버전): %s', len(self.versions), self.versions)
 
         # 명령어 자동 등록
         self._register_commands()
@@ -54,11 +67,14 @@ class Releaser(Component):
             self._cmd_request_latest_version,
             self._cmd_download_update
         )
-        self.l.debug('Releaser commands registered')
+        self.l.debug('Releaser 명령어 등록됨')
 
     def get_version_list(self):
         """
         status='approved'인 버전 목록만 반환 (Semantic versioning 정렬)
+
+        Returns:
+            list: approved 상태의 버전 목록 (정렬됨)
         """
         approved_versions = []
 
@@ -72,7 +88,7 @@ class Releaser(Component):
                 # status.json 확인
                 status_file = os.path.join(dir_path, 'status.json')
                 if not os.path.exists(status_file):
-                    self.l.warning('No status.json in %s, skipping', version_dir)
+                    self.l.warning('%s에 status.json 없음, 건너뜀', version_dir)
                     continue
 
                 with open(status_file, 'r', encoding='utf-8') as f:
@@ -82,39 +98,66 @@ class Releaser(Component):
                 if metadata.get('status') == 'approved':
                     approved_versions.append(version_dir)
                 else:
-                    self.l.debug('Version %s status=%s, skipping',
+                    self.l.debug('버전 %s 상태=%s, 건너뜀',
                                 version_dir, metadata.get('status'))
 
         except Exception as e:
-            self.l.error('Failed to get version list: %s', e)
+            self.l.error('버전 목록 가져오기 실패: %s', e)
 
         # Semantic versioning으로 정렬 (Major.Minor.Patch 또는 Major.Minor 지원)
         try:
             from .utils.version import parse_version
             approved_versions.sort(key=lambda v: parse_version(v))
         except ValueError as e:
-            self.l.warning('Some versions have invalid format: %s', e)
+            self.l.warning('일부 버전의 형식이 잘못됨: %s', e)
 
         return approved_versions
 
     def get_latest_version(self):
-        """최신 버전 반환 (approved 버전 중)"""
+        """
+        최신 버전 반환 (approved 버전 중)
+
+        Returns:
+            str: 최신 버전 문자열, 없으면 None
+        """
         if not self.versions:
             return None
         return self.versions[-1]
 
     def get_metadata(self, version: str) -> dict:
-        """특정 버전의 메타데이터 읽기"""
+        """
+        특정 버전의 메타데이터 읽기
+
+        Args:
+            version: 버전 문자열
+
+        Returns:
+            dict: status.json의 메타데이터
+
+        Raises:
+            FileNotFoundError: status.json이 없을 때
+        """
         status_file = os.path.join(self.release_path, version, 'status.json')
 
         if not os.path.exists(status_file):
-            raise FileNotFoundError(f'Metadata not found for version {version}')
+            raise FileNotFoundError(f'버전 {version}의 메타데이터를 찾을 수 없음')
 
         with open(status_file, 'r', encoding='utf-8') as f:
             return json.load(f)
 
     def get_program_path(self, version):
-        """특정 버전의 프로그램 파일 경로 반환"""
+        """
+        특정 버전의 프로그램 파일 경로 반환
+
+        Args:
+            version: 버전 문자열
+
+        Returns:
+            str: 프로그램 실행 파일 경로
+
+        Raises:
+            FileNotFoundError: 프로그램 파일을 찾을 수 없을 때
+        """
         version_dir = os.path.join(self.release_path, version)
 
         # 실행 파일 찾기 (Windows: .exe, Linux/Mac: 실행 권한 있는 파일)
@@ -134,31 +177,52 @@ class Releaser(Component):
         if files:
             return os.path.join(version_dir, files[0])
 
-        raise FileNotFoundError('No program file found in version %s' % version)
+        raise FileNotFoundError('버전 %s에서 프로그램 파일을 찾을 수 없음' % version)
 
     @command(ident='__request_versions__')
     async def _cmd_request_versions(self, cmdr: Commander, body, cid):
-        """클라이언트가 사용 가능한 버전 목록 요청"""
-        self.l.info('Version list requested from cid=%d', cid)
+        """
+        클라이언트가 사용 가능한 버전 목록 요청
+
+        Args:
+            cmdr: Commander 인스턴스
+            body: 요청 본문 (미사용)
+            cid: 클라이언트 연결 ID
+        """
+        self.l.info('cid=%d로부터 버전 목록 요청됨', cid)
         self.versions = self.get_version_list()  # 최신 목록으로 갱신
         await cmdr.send_command('__receive_versions__', self.versions, cid)
 
     @command(ident='__request_latest_version__')
     async def _cmd_request_latest_version(self, cmdr: Commander, body, cid):
-        """클라이언트가 최신 버전 정보 요청"""
+        """
+        클라이언트가 최신 버전 정보 요청
+
+        Args:
+            cmdr: Commander 인스턴스
+            body: 요청 본문 (미사용)
+            cid: 클라이언트 연결 ID
+        """
         latest = self.get_latest_version()
-        self.l.info('Latest version requested from cid=%d: %s', cid, latest)
+        self.l.info('cid=%d로부터 최신 버전 요청됨: %s', cid, latest)
         await cmdr.send_command('__receive_latest_version__', latest, cid)
 
     @command(ident='__download_update__')
     async def _cmd_download_update(self, cmdr: Commander, body, cid):
-        """클라이언트가 특정 버전 다운로드 요청 (다중 파일 지원)"""
+        """
+        클라이언트가 특정 버전 다운로드 요청 (다중 파일 지원)
+
+        Args:
+            cmdr: Commander 인스턴스
+            body: 요청 본문 (version 포함)
+            cid: 클라이언트 연결 ID
+        """
         version = body.get('version')
-        self.l.info('Update download requested from cid=%d: version=%s', cid, version)
+        self.l.info('cid=%d로부터 업데이트 다운로드 요청됨: version=%s', cid, version)
 
         if version not in self.versions:
             await cmdr.send_command('__download_failed__',
-                                   {'error': 'Version not found: %s' % version}, cid)
+                                   {'error': '버전을 찾을 수 없음: %s' % version}, cid)
             return
 
         try:
@@ -167,13 +231,13 @@ class Releaser(Component):
             files = metadata.get('files', [])
 
             if not files:
-                raise ValueError(f'No files found in version {version}')
+                raise ValueError(f'버전 {version}에 파일이 없음')
 
             # 총 크기 계산
             total_size = sum(f['size'] for f in files)
 
-            self.l.info('Sending %d files (total: %.2f MB) for version %s',
-                       len(files), total_size / 1024 / 1024, version)
+            self.l.info('버전 %s에 대해 %d개 파일 전송 중 (총 %.2f MB)',
+                       version, len(files), total_size / 1024 / 1024)
 
             # 파일 전송 시작 알림
             await cmdr.send_command('__download_start__', {
@@ -188,9 +252,9 @@ class Releaser(Component):
                 file_path = os.path.join(self.release_path, version, file_info['path'])
 
                 if not os.path.exists(file_path):
-                    raise FileNotFoundError(f"File not found: {file_info['path']}")
+                    raise FileNotFoundError(f"파일을 찾을 수 없음: {file_info['path']}")
 
-                self.l.debug('Sending file: %s (%d bytes)',
+                self.l.debug('파일 전송 중: %s (%d bytes)',
                             file_info['path'], file_info['size'])
 
                 # 파일 전송
@@ -200,10 +264,10 @@ class Releaser(Component):
             await cmdr.send_command('__download_complete__',
                                    {'version': version, 'file_count': len(files)}, cid)
 
-            self.l.info('Update download completed for cid=%d: %d files sent', cid, len(files))
+            self.l.info('cid=%d에 대한 업데이트 다운로드 완료: %d개 파일 전송됨', cid, len(files))
 
         except Exception as e:
-            self.l.exception('Failed to send update files')
+            self.l.exception('업데이트 파일 전송 실패')
             await cmdr.send_command('__download_failed__',
                                    {'error': str(e)}, cid)
 
@@ -231,6 +295,16 @@ class Updater(Component):
         parent=None,
         timeout: float = 30.0
     ):
+        """
+        Updater 초기화
+
+        Args:
+            svc: 서비스 인스턴스
+            commander: Commander 인스턴스
+            name: 컴포넌트 이름
+            parent: 부모 컴포넌트
+            timeout: 서버 응답 대기 타임아웃 (초)
+        """
         super().__init__(svc, name, parent)
         self._cmdr = commander
         self._timeout = timeout
@@ -251,7 +325,7 @@ class Updater(Component):
         full_download_path = self.svc.path(self._download_path)
         os.makedirs(full_download_path, exist_ok=True)
 
-        self.l.info('Updater initialized, download path: %s', full_download_path)
+        self.l.info('Updater 초기화됨, 다운로드 경로: %s', full_download_path)
 
         # 명령어 자동 등록
         self._register_commands()
@@ -265,15 +339,24 @@ class Updater(Component):
             self._cmd_download_complete,
             self._cmd_download_failed
         )
-        self.l.debug('Updater commands registered')
+        self.l.debug('Updater 명령어 등록됨')
 
     async def fetch_versions(self, cid=1):
         """
-        🔒 서버로부터 사용 가능한 버전 목록 가져오기 (Blocking)
+        서버로부터 사용 가능한 버전 목록 가져오기 (Blocking)
 
         타임아웃 내에 응답을 기다립니다.
+
+        Args:
+            cid: 연결 ID
+
+        Returns:
+            list: 사용 가능한 버전 목록
+
+        Raises:
+            TimeoutError: 타임아웃 내에 응답 없음
         """
-        self.l.info('Fetching available versions from server')
+        self.l.info('서버로부터 사용 가능한 버전 목록 가져오는 중')
 
         # 이벤트 초기화
         self._versions_received.clear()
@@ -290,16 +373,25 @@ class Updater(Component):
             )
             return self._available_versions
         except asyncio.TimeoutError:
-            self.l.error('Timeout waiting for version list (%.1fs)', self._timeout)
-            raise TimeoutError(f'No response from server within {self._timeout}s')
+            self.l.error('버전 목록 대기 타임아웃 (%.1f초)', self._timeout)
+            raise TimeoutError(f'{self._timeout}초 내에 서버 응답 없음')
 
     async def fetch_latest_version(self, cid=1):
         """
-        🔒 서버로부터 최신 버전 정보 가져오기 (Blocking)
+        서버로부터 최신 버전 정보 가져오기 (Blocking)
 
         타임아웃 내에 응답을 기다립니다.
+
+        Args:
+            cid: 연결 ID
+
+        Returns:
+            str: 최신 버전, 없으면 None
+
+        Raises:
+            TimeoutError: 타임아웃 내에 응답 없음
         """
-        self.l.info('Fetching latest version from server')
+        self.l.info('서버로부터 최신 버전 정보 가져오는 중')
 
         # 이벤트 초기화
         self._latest_received.clear()
@@ -316,35 +408,41 @@ class Updater(Component):
             )
             return self._latest_version
         except asyncio.TimeoutError:
-            self.l.error('Timeout waiting for latest version (%.1fs)', self._timeout)
-            raise TimeoutError(f'No response from server within {self._timeout}s')
+            self.l.error('최신 버전 대기 타임아웃 (%.1f초)', self._timeout)
+            raise TimeoutError(f'{self._timeout}초 내에 서버 응답 없음')
 
     async def check_update(self, cid=1):
         """
         업데이트 확인
+
+        Args:
+            cid: 연결 ID
 
         Returns:
             bool: 업데이트 가능 여부
         """
         latest = await self.fetch_latest_version(cid)
         if latest is None:
-            self.l.warning('No version information available from server')
+            self.l.warning('서버로부터 버전 정보를 사용할 수 없음')
             return False
 
         current = self.svc.version
-        self.l.info('Version check: current=%s, latest=%s', current, latest)
+        self.l.info('버전 확인: current=%s, latest=%s', current, latest)
 
         return compare_versions(latest, current) > 0
 
     async def download_update(self, version=None, cid=1):
         """
-        🔒 업데이트 다운로드 (Blocking)
+        업데이트 다운로드 (Blocking)
 
         다운로드 완료까지 대기합니다.
 
         Args:
             version: 다운로드할 버전 (None이면 최신 버전)
             cid: 연결 ID
+
+        Returns:
+            str: 다운로드된 버전
 
         Raises:
             ValueError: 버전 정보 없음
@@ -355,9 +453,9 @@ class Updater(Component):
             version = self._latest_version
 
         if version is None:
-            raise ValueError('No version specified and no latest version available')
+            raise ValueError('버전이 지정되지 않았고 최신 버전 정보도 없음')
 
-        self.l.info('Requesting download for version %s', version)
+        self.l.info('버전 %s 다운로드 요청 중', version)
 
         # 이벤트 및 상태 초기화
         self._download_completed.clear()
@@ -376,14 +474,14 @@ class Updater(Component):
 
             # 에러 체크
             if self._download_error:
-                raise RuntimeError(f'Download failed: {self._download_error}')
+                raise RuntimeError(f'다운로드 실패: {self._download_error}')
 
-            self.l.info('✓ Download completed: %s', self._download_status)
+            self.l.info('다운로드 완료: %s', self._download_status)
             return self._download_status
 
         except asyncio.TimeoutError:
-            self.l.error('Timeout waiting for download (%.1fs)', self._timeout * 3)
-            raise TimeoutError(f'Download not completed within {self._timeout * 3}s')
+            self.l.error('다운로드 대기 타임아웃 (%.1f초)', self._timeout * 3)
+            raise TimeoutError(f'{self._timeout * 3}초 내에 다운로드 완료되지 않음')
 
     def _get_install_paths(self):
         """
@@ -418,7 +516,7 @@ class Updater(Component):
         현재 버전 백업
 
         Returns:
-            str: 백업 디렉토리 경로
+            str: 백업 디렉토리 경로, 실행 파일이 없으면 None
         """
         import shutil
         from datetime import datetime
@@ -427,7 +525,7 @@ class Updater(Component):
         exe_path = os.path.join(exe_dir, exe_name)
 
         if not os.path.exists(exe_path):
-            self.l.warning('Current executable not found: %s', exe_path)
+            self.l.warning('현재 실행 파일을 찾을 수 없음: %s', exe_path)
             return None
 
         # 백업 디렉토리 생성 (타임스탬프)
@@ -441,9 +539,9 @@ class Updater(Component):
             if os.path.isfile(item_path) and not item.startswith('backup_'):
                 backup_path = os.path.join(backup_dir, item)
                 shutil.copy2(item_path, backup_path)
-                self.l.debug('Backed up: %s', item)
+                self.l.debug('백업됨: %s', item)
 
-        self.l.info('Backup created: %s', backup_dir)
+        self.l.info('백업 생성됨: %s', backup_dir)
         return backup_dir
 
     def _deploy_files(self, version):
@@ -453,19 +551,23 @@ class Updater(Component):
         Args:
             version: 배포할 버전
 
-        Windows: .new 확장자로 저장 (재시작 시 교체)
-        Linux: 직접 덮어쓰기
+        Raises:
+            FileNotFoundError: 다운로드된 버전이 없을 때
+
+        Note:
+            Windows: .new 확장자로 저장 (재시작 시 교체)
+            Linux: 직접 덮어쓰기
         """
         import shutil
 
         # 다운로드 경로
         download_dir = os.path.join(self.svc.path(self._download_path), version)
         if not os.path.exists(download_dir):
-            raise FileNotFoundError(f'Downloaded version not found: {download_dir}')
+            raise FileNotFoundError(f'다운로드된 버전을 찾을 수 없음: {download_dir}')
 
         # 설치 경로
         exe_dir, _ = self._get_install_paths()
-        self.l.info('Deploying from %s to %s', download_dir, exe_dir)
+        self.l.info('%s에서 %s로 배포 중', download_dir, exe_dir)
 
         # 다운로드된 모든 파일 배포
         deployed_count = 0
@@ -487,7 +589,7 @@ class Updater(Component):
                     os.makedirs(dest_dir, exist_ok=True)
 
                 # 파일 복사
-                self.l.info('Copying: %s -> %s', src_path, dest_path)
+                self.l.info('복사 중: %s -> %s', src_path, dest_path)
                 shutil.copy2(src_path, dest_path)
 
                 # 실행 권한 유지 (Linux)
@@ -497,7 +599,7 @@ class Updater(Component):
 
                 deployed_count += 1
 
-        self.l.info('Deployed %d file(s) for version %s', deployed_count, version)
+        self.l.info('버전 %s에 대해 %d개 파일 배포됨', version, deployed_count)
 
     def _update_version_config(self, new_version):
         """
@@ -508,7 +610,7 @@ class Updater(Component):
         """
         self.svc.set_config('PSVC', 'version', new_version)
         self.svc.version = new_version
-        self.l.info('Version updated in config: %s', new_version)
+        self.l.info('Config에서 버전 업데이트됨: %s', new_version)
 
     async def install_update(self, version=None):
         """
@@ -518,16 +620,16 @@ class Updater(Component):
             version: 설치할 버전 (None이면 다운로드된 최신 버전)
 
         Raises:
-            FileNotFoundError: 다운로드된 버전 없음
+            ValueError: 설치할 버전 정보 없음
             RuntimeError: 설치 실패
         """
         if version is None:
             version = self._download_status or self._latest_version
 
         if version is None:
-            raise ValueError('No version to install')
+            raise ValueError('설치할 버전이 없음')
 
-        self.l.info('Installing update: %s', version)
+        self.l.info('업데이트 설치 중: %s', version)
 
         # 백업 생성
         backup_dir = self._create_backup()
@@ -539,24 +641,28 @@ class Updater(Component):
             # Config 버전 업데이트
             self._update_version_config(version)
 
-            self.l.info('Installation completed: %s', version)
+            self.l.info('설치 완료: %s', version)
 
         except Exception as e:
-            self.l.error('Installation failed: %s', e)
+            self.l.error('설치 실패: %s', e)
             # 롤백 (필요시)
             if backup_dir and os.path.exists(backup_dir):
-                self.l.warning('Rollback not implemented, backup saved at: %s', backup_dir)
-            raise RuntimeError(f'Installation failed: {e}') from e
+                self.l.warning('롤백이 구현되지 않음, 백업 저장 위치: %s', backup_dir)
+            raise RuntimeError(f'설치 실패: {e}') from e
 
     async def download_and_install(self, cid=1, restart=True):
         """
         업데이트 다운로드 및 설치 (재시작)
 
+        Args:
+            cid: 연결 ID
+            restart: 설치 후 재시작 여부
+
         Returns:
             bool: 업데이트 수행 여부
         """
         if not await self.check_update(cid):
-            self.l.info('Already up to date')
+            self.l.info('이미 최신 버전')
             return False
 
         # 다운로드
@@ -573,7 +679,7 @@ class Updater(Component):
 
     async def restart_service(self):
         """서비스 재시작 (안전한 종료 후 새 프로세스 시작)"""
-        self.l.info('Preparing to restart for update...')
+        self.l.info('업데이트를 위한 재시작 준비 중...')
 
         # 1. 새 프로세스 시작 함수 정의
         def start_new_process(executable, args):
@@ -587,37 +693,58 @@ class Updater(Component):
         executable = sys.executable
         args = sys.argv
         self.svc.append_closer(start_new_process, [executable, args])
-        self.l.info('New process scheduled to start after shutdown')
+        self.l.info('종료 후 새 프로세스 시작 예약됨')
 
         # 3. 서비스 중지 (destroy()는 _service의 finally 블록에서 자동 호출됨)
-        self.l.info('Stopping current service')
+        self.l.info('현재 서비스 중지 중')
         self.svc.stop()
 
     @command(ident='__receive_versions__')
     async def _cmd_receive_versions(self, cmdr: Commander, body, cid):
-        """서버로부터 버전 목록 수신"""
+        """
+        서버로부터 버전 목록 수신
+
+        Args:
+            cmdr: Commander 인스턴스 (미사용)
+            body: 버전 목록
+            cid: 클라이언트 연결 ID (미사용)
+        """
         self._available_versions = body
-        self.l.info('Received %d versions: %s', len(body), body)
+        self.l.info('%d개 버전 수신됨: %s', len(body), body)
         # 🔓 이벤트 설정 (blocking 해제)
         self._versions_received.set()
 
     @command(ident='__receive_latest_version__')
     async def _cmd_receive_latest_version(self, cmdr: Commander, body, cid):
-        """서버로부터 최신 버전 정보 수신"""
+        """
+        서버로부터 최신 버전 정보 수신
+
+        Args:
+            cmdr: Commander 인스턴스 (미사용)
+            body: 최신 버전
+            cid: 클라이언트 연결 ID (미사용)
+        """
         self._latest_version = body
-        self.l.info('Received latest version: %s', body)
+        self.l.info('최신 버전 수신됨: %s', body)
         # 🔓 이벤트 설정 (blocking 해제)
         self._latest_received.set()
 
     @command(ident='__download_start__')
     async def _cmd_download_start(self, cmdr: Commander, body, cid):
-        """다운로드 시작 알림 (다중 파일 지원)"""
+        """
+        다운로드 시작 알림 (다중 파일 지원)
+
+        Args:
+            cmdr: Commander 인스턴스
+            body: 다운로드 정보 (version, files, total_size, file_count)
+            cid: 클라이언트 연결 ID
+        """
         version = body.get('version')
         files = body.get('files', [])
         total_size = body.get('total_size', 0)
         file_count = body.get('file_count', 0)
 
-        self.l.info('Download starting: version=%s, %d files (%.2f MB)',
+        self.l.info('다운로드 시작: version=%s, %d개 파일 (%.2f MB)',
                    version, file_count, total_size / 1024 / 1024)
 
         # 버전 디렉토리 생성
@@ -636,7 +763,7 @@ class Updater(Component):
             # 하위 디렉토리 생성
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
 
-            self.l.debug('Receiving file: %s (%d bytes)', file_path, expected_size)
+            self.l.debug('파일 수신 중: %s (%d bytes)', file_path, expected_size)
 
             try:
                 # 파일 수신
@@ -644,32 +771,39 @@ class Updater(Component):
 
                 # 체크섬 검증
                 if not verify_checksum(full_path, expected_checksum):
-                    raise ValueError(f'Checksum verification failed for {file_path}')
+                    raise ValueError(f'{file_path}의 체크섬 검증 실패')
 
                 # 파일 크기 검증
                 actual_size = os.path.getsize(full_path)
                 if actual_size != expected_size:
                     raise ValueError(
-                        f'File size mismatch for {file_path}: '
-                        f'expected {expected_size}, got {actual_size}'
+                        f'{file_path}의 파일 크기 불일치: '
+                        f'예상 {expected_size}, 실제 {actual_size}'
                     )
 
-                self.l.debug('File verified: %s', file_path)
+                self.l.debug('파일 검증됨: %s', file_path)
 
             except Exception as e:
-                self.l.error('Failed to receive file %s: %s', file_path, e)
+                self.l.error('파일 수신 실패 %s: %s', file_path, e)
                 # 부분 다운로드 실패 시 정리
                 if os.path.exists(full_path):
                     os.remove(full_path)
                 raise
 
-        self.l.info('All files received and verified for version %s', version)
+        self.l.info('버전 %s의 모든 파일 수신 및 검증 완료', version)
 
     @command(ident='__download_complete__')
     async def _cmd_download_complete(self, cmdr: Commander, body, cid):
-        """다운로드 완료 알림"""
+        """
+        다운로드 완료 알림
+
+        Args:
+            cmdr: Commander 인스턴스 (미사용)
+            body: 완료 정보 (version 포함)
+            cid: 클라이언트 연결 ID (미사용)
+        """
         version = body.get('version')
-        self.l.info('Download completed: version=%s', version)
+        self.l.info('다운로드 완료: version=%s', version)
 
         # 상태 저장
         self._download_status = version
@@ -680,9 +814,16 @@ class Updater(Component):
 
     @command(ident='__download_failed__')
     async def _cmd_download_failed(self, cmdr: Commander, body, cid):
-        """다운로드 실패 알림"""
+        """
+        다운로드 실패 알림
+
+        Args:
+            cmdr: Commander 인스턴스 (미사용)
+            body: 실패 정보 (error 포함)
+            cid: 클라이언트 연결 ID (미사용)
+        """
         error = body.get('error')
-        self.l.error('Download failed: %s', error)
+        self.l.error('다운로드 실패: %s', error)
 
         # 에러 저장
         self._download_status = None

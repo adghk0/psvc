@@ -16,7 +16,7 @@ from .utils.checksum import calculate_directory_checksums
 
 @dataclass
 class BuildMetadata:
-    """빌드 메타데이터 - 불변 데이터 클래스로 타입 안정성 확보"""
+    """빌드 메타데이터"""
     version: str
     status: str = 'draft'
     build_time: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -27,7 +27,12 @@ class BuildMetadata:
     release_notes: str = ''
 
     def to_dict(self) -> dict:
-        """딕셔너리로 변환 (JSON 직렬화용)"""
+        """
+        딕셔너리로 변환 (JSON 직렬화용)
+
+        Returns:
+            dict: 메타데이터 딕셔너리
+        """
         return asdict(self)
 
 
@@ -38,9 +43,9 @@ class BuildError(Exception):
 
 class Builder:
     """
-    🎯 PyInstaller 빌드 자동화 클래스
+    PyInstaller 빌드 자동화 클래스
 
-    깔끔하고 강력한 빌드 파이프라인:
+    빌드 파이프라인:
     1. 버전 검증
     2. PyInstaller 실행
     3. 아티팩트 복사 (제외 패턴 적용)
@@ -75,7 +80,15 @@ class Builder:
 
     @staticmethod
     def _resolve_path(path: str) -> Path:
-        """경로 해석 - 파일이면 부모 디렉토리, 디렉토리면 그대로"""
+        """
+        경로 해석 - 파일이면 부모 디렉토리, 디렉토리면 그대로
+
+        Args:
+            path: 해석할 경로
+
+        Returns:
+            Path: 디렉토리 경로
+        """
         p = Path(path)
         return p.parent if p.is_file() else p
 
@@ -87,7 +100,7 @@ class Builder:
         **pyinstaller_options
     ) -> Path:
         """
-        🔨 PyInstaller로 실행 파일 빌드
+        PyInstaller로 실행 파일 빌드
 
         Args:
             version: Semantic version (예: "1.0.0")
@@ -111,10 +124,10 @@ class Builder:
         """
         # 버전 검증
         if not is_valid_version(version):
-            raise BuildError(f"❌ Invalid version: {version}")
+            raise BuildError(f"잘못된 버전 형식: {version}")
 
         print(f"\n{'='*70}")
-        print(f"🚀 Building {self.service_name} v{version}")
+        print(f"🚀 {self.service_name} v{version} 빌드 중")
         print(f"{'='*70}")
 
         # 제외 패턴 설정
@@ -124,7 +137,7 @@ class Builder:
         version_dir = self._prepare_version_dir(version)
 
         try:
-            # 🔥 빌드 파이프라인 - 각 단계가 명확하게 분리됨
+            # 빌드 파이프라인
             dist_path = self._run_pyinstaller(spec_file, **pyinstaller_options)
             self._copy_artifacts(dist_path, version_dir, exclude_patterns)
             checksums = self._calculate_checksums(version_dir, exclude_patterns)
@@ -138,14 +151,22 @@ class Builder:
             # 실패 시 버전 디렉토리 정리
             if version_dir.exists():
                 shutil.rmtree(version_dir, ignore_errors=True)
-            raise BuildError(f"Build failed: {e}") from e
+            raise BuildError(f"빌드 실패: {e}") from e
 
     def _prepare_version_dir(self, version: str) -> Path:
-        """버전 디렉토리 준비 - 기존 버전 덮어쓰기"""
+        """
+        버전 디렉토리 준비 - 기존 버전 덮어쓰기
+
+        Args:
+            version: 버전 문자열
+
+        Returns:
+            Path: 버전 디렉토리 경로
+        """
         version_dir = self.release_path / version
 
         if version_dir.exists():
-            print(f"⚠️  Version {version} exists. Overwriting...")
+            print(f"⚠️ 버전 {version}이(가) 이미 존재합니다. 덮어쓰는 중...")
             shutil.rmtree(version_dir)
 
         version_dir.mkdir(parents=True, exist_ok=True)
@@ -153,16 +174,26 @@ class Builder:
 
     def _run_pyinstaller(self, spec_file: str, **options) -> Path:
         """
-        🔧 PyInstaller 실행
+        PyInstaller 실행
 
         Spec 파일 기반 빌드만 지원 (일관성과 재현성 보장)
+
+        Args:
+            spec_file: Spec 파일 경로
+            **options: PyInstaller 추가 옵션
+
+        Returns:
+            Path: 빌드 결과 경로 (dist 디렉토리 내)
+
+        Raises:
+            BuildError: Spec 파일 없음 또는 빌드 실패
         """
-        print(f"\n[1/5] 🔧 Running PyInstaller...")
+        print(f"\n[1/5] 🔧 PyInstaller 실행 중...")
 
         # Spec 파일 검증
         spec_path = self.root_path / spec_file
         if not spec_path.exists():
-            raise BuildError(f"Spec file not found: {spec_path}")
+            raise BuildError(f"Spec 파일을 찾을 수 없음: {spec_path}")
 
         # 명령어 구성 (spec 파일 사용 시 경로 옵션 제외)
         cmd = [
@@ -191,15 +222,15 @@ class Builder:
         if result.returncode != 0:
             error_msg = result.stderr or result.stdout
             raise BuildError(
-                f"PyInstaller failed (exit {result.returncode})\n{error_msg[:500]}"
+                f"PyInstaller 실패 (종료 코드 {result.returncode})\n{error_msg[:500]}"
             )
 
         # 빌드 결과 찾기
         dist_dir = self.root_path / 'dist'
         if not dist_dir.exists() or not list(dist_dir.iterdir()):
-            raise BuildError("No output in dist directory")
+            raise BuildError("dist 디렉토리에 출력 파일이 없음")
 
-        print(f"  ✓ PyInstaller completed")
+        print(f"  ✓ PyInstaller 완료")
         return list(dist_dir.iterdir())[0]
 
     def _copy_artifacts(
@@ -208,10 +239,17 @@ class Builder:
         destination: Path,
         exclude_patterns: List[str]
     ):
-        """📦 빌드 결과물 복사 (제외 패턴 적용)"""
+        """
+        빌드 결과물 복사 (제외 패턴 적용)
+
+        Args:
+            source: 소스 경로 (파일 또는 디렉토리)
+            destination: 목적지 디렉토리
+            exclude_patterns: 제외할 파일 패턴 목록
+        """
         import fnmatch
 
-        print(f"\n[2/5] 📦 Copying build artifacts...")
+        print(f"\n[2/5] 빌드 결과물 복사 중...")
 
         if source.is_file():
             # 단일 파일 복사
@@ -236,22 +274,31 @@ class Builder:
             shutil.copy2(item, dest_file)
             copied += 1
 
-        print(f"  ✓ Copied {copied} file(s)")
+        print(f"  ✓ {copied}개 파일 복사 완료")
 
     def _calculate_checksums(
         self,
         version_dir: Path,
         exclude_patterns: List[str]
     ) -> Dict[str, str]:
-        """🔐 체크섬 계산 (SHA256)"""
-        print(f"\n[3/5] 🔐 Calculating checksums...")
+        """
+        체크섬 계산 (SHA256)
+
+        Args:
+            version_dir: 버전 디렉토리 경로
+            exclude_patterns: 제외할 파일 패턴 목록
+
+        Returns:
+            Dict[str, str]: 파일 경로별 체크섬 딕셔너리
+        """
+        print(f"\n[3/5] 체크섬 계산 중...")
 
         checksums = calculate_directory_checksums(
             str(version_dir),
             exclude_patterns
         )
 
-        print(f"  ✓ {len(checksums)} file(s) processed")
+        print(f"  ✓ {len(checksums)}개 파일 처리 완료")
         return checksums
 
     def _create_metadata(
@@ -260,8 +307,18 @@ class Builder:
         version_dir: Path,
         checksums: Dict[str, str]
     ) -> BuildMetadata:
-        """📝 메타데이터 생성 (dataclass 사용으로 타입 안전성 보장)"""
-        print(f"\n[4/5] 📝 Creating metadata...")
+        """
+        메타데이터 생성 (dataclass 사용으로 타입 안전성 보장)
+
+        Args:
+            version: 버전 문자열
+            version_dir: 버전 디렉토리 경로
+            checksums: 파일 경로별 체크섬 딕셔너리
+
+        Returns:
+            BuildMetadata: 빌드 메타데이터
+        """
+        print(f"\n[4/5] 메타데이터 생성 중...")
 
         files = [
             {
@@ -273,12 +330,18 @@ class Builder:
         ]
 
         metadata = BuildMetadata(version=version, files=files)
-        print(f"  ✓ Metadata for {len(files)} file(s)")
+        print(f"  ✓ {len(files)}개 파일에 대한 메타데이터 생성 완료")
         return metadata
 
     def _save_metadata(self, version_dir: Path, metadata: BuildMetadata):
-        """💾 메타데이터 저장"""
-        print(f"\n[5/5] 💾 Saving status.json...")
+        """
+        메타데이터 저장
+
+        Args:
+            version_dir: 버전 디렉토리 경로
+            metadata: 빌드 메타데이터
+        """
+        print(f"\n[5/5] status.json 저장 중...")
 
         status_file = version_dir / 'status.json'
         with open(status_file, 'w', encoding='utf-8') as f:
@@ -287,16 +350,22 @@ class Builder:
         print(f"  ✓ {status_file.name}")
 
     def _print_summary(self, version_dir: Path, metadata: BuildMetadata):
-        """📊 빌드 결과 요약 출력"""
+        """
+        빌드 결과 요약 출력
+
+        Args:
+            version_dir: 버전 디렉토리 경로
+            metadata: 빌드 메타데이터
+        """
         total_size_mb = sum(f['size'] for f in metadata.files) / 1024 / 1024
 
         print(f"\n{'='*70}")
-        print(f"✅ Build Completed: {version_dir}")
+        print(f"✅ 빌드 완료: {version_dir}")
         print(f"{'='*70}")
-        print(f"  Version:      {metadata.version}")
-        print(f"  Status:       {metadata.status}")
-        print(f"  Platform:     {metadata.platform}")
-        print(f"  Files:        {len(metadata.files)} file(s)")
-        print(f"  Total size:   {total_size_mb:.2f} MB")
-        print(f"  Build time:   {metadata.build_time}")
+        print(f"  버전:         {metadata.version}")
+        print(f"  상태:         {metadata.status}")
+        print(f"  플랫폼:       {metadata.platform}")
+        print(f"  파일:         {len(metadata.files)}개")
+        print(f"  전체 크기:    {total_size_mb:.2f} MB")
+        print(f"  빌드 시간:    {metadata.build_time}")
         print(f"{'='*70}\n")

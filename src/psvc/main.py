@@ -19,9 +19,21 @@ from .builder import Builder
 
 
 class Config(Component):
-    """서비스 설정 관리 컴포넌트 (JSON 기반)"""
+    """
+    서비스 설정 관리 컴포넌트 (JSON 기반)
+
+    INI 파일에서 JSON으로 자동 마이그레이션하며, 타입 변환을 지원합니다.
+    """
 
     def __init__(self, svc, config_file, name='Config'):
+        """
+        Config 초기화
+
+        Args:
+            svc: 서비스 인스턴스
+            config_file: 설정 파일 경로
+            name: 컴포넌트 이름
+        """
         super().__init__(svc, name)
 
         # 설정 파일 경로 결정
@@ -38,7 +50,15 @@ class Config(Component):
         self._config = self._load_config()
 
     def _get_json_path(self, file_path: str) -> str:
-        """설정 파일 경로를 JSON 경로로 변환"""
+        """
+        설정 파일 경로를 JSON 경로로 변환
+
+        Args:
+            file_path: 원본 설정 파일 경로
+
+        Returns:
+            str: JSON 파일 경로
+        """
         if file_path.endswith('.conf'):
             return file_path.replace('.conf', '.json')
         elif file_path.endswith('.ini'):
@@ -47,7 +67,12 @@ class Config(Component):
             return file_path + '.json'
 
     def _load_config(self) -> dict:
-        """설정 파일 로드 (JSON 우선, 없으면 INI 마이그레이션)"""
+        """
+        설정 파일 로드 (JSON 우선, 없으면 INI 마이그레이션)
+
+        Returns:
+            dict: 로드된 설정 딕셔너리
+        """
         import json
 
         # 1. JSON 파일이 존재하면 로드
@@ -56,7 +81,7 @@ class Config(Component):
                 with open(self._json_file, 'r', encoding='utf-8') as f:
                     return json.load(f)
             except json.JSONDecodeError as e:
-                self.l.error('Failed to load JSON config (%s): %s', self._json_file, e)
+                self.l.error('JSON 설정 파일 로드 실패 (%s): %s', self._json_file, e)
                 # JSON 파싱 실패 시 INI에서 재생성 시도
                 if os.path.exists(self._ini_file):
                     return self._migrate_from_ini()
@@ -70,8 +95,13 @@ class Config(Component):
         return {}
 
     def _migrate_from_ini(self) -> dict:
-        """INI 파일을 JSON으로 변환"""
-        self.l.info('Migrating config: %s -> %s', self._ini_file, self._json_file)
+        """
+        INI 파일을 JSON으로 변환
+
+        Returns:
+            dict: 변환된 설정 딕셔너리
+        """
+        self.l.info('설정 파일 마이그레이션 중: %s -> %s', self._ini_file, self._json_file)
 
         parser = configparser.ConfigParser()
         parser.read(self._ini_file, encoding='utf-8')
@@ -90,7 +120,11 @@ class Config(Component):
         return config
 
     def _mark_ini_as_migrated(self):
-        """INI 파일 상단에 마이그레이션 안내 추가"""
+        """
+        INI 파일 상단에 마이그레이션 안내 추가
+
+        JSON으로 마이그레이션되었음을 INI 파일 상단에 표시합니다.
+        """
         if not os.path.exists(self._ini_file):
             return
 
@@ -109,7 +143,12 @@ class Config(Component):
             f.write(header + content)
 
     def _save_config(self, config=None):
-        """설정을 JSON 파일로 저장"""
+        """
+        설정을 JSON 파일로 저장
+
+        Args:
+            config: 저장할 설정 딕셔너리 (None이면 현재 설정 저장)
+        """
         import json
 
         if config is None:
@@ -119,7 +158,8 @@ class Config(Component):
             json.dump(config, f, indent=2, ensure_ascii=False)
 
     def _parse_value(self, value, dtype=None):
-        """값을 지정된 타입으로 파싱
+        """
+        값을 지정된 타입으로 파싱
 
         Args:
             value: 파싱할 값
@@ -127,6 +167,9 @@ class Config(Component):
 
         Returns:
             파싱된 값
+
+        Raises:
+            ValueError: 타입 변환 실패 시
         """
         # 타입 지정이 없으면 원본 반환
         if dtype is None:
@@ -168,7 +211,8 @@ class Config(Component):
         return dtype(value)
 
     def set_config(self, section: str, key: str, value, dtype=None):
-        """설정 값을 저장합니다.
+        """
+        설정 값을 저장합니다.
 
         Args:
             section: 섹션 이름
@@ -185,7 +229,8 @@ class Config(Component):
         self._save_config()
 
     def get_config(self, section: str, key: str = None, default=None, dtype=None):
-        """설정 값을 반환합니다.
+        """
+        설정 값을 반환합니다.
 
         Args:
             section: 섹션 이름 (또는 'section\\key' 형식)
@@ -226,6 +271,13 @@ class Config(Component):
     
 
 class Service(Component, ABC):
+    """
+    서비스 기본 클래스
+
+    비동기 작업 관리, 설정 파일 처리, 빌드/릴리스 기능을 제공하는
+    추상 베이스 클래스입니다. 사용자는 이 클래스를 상속하여
+    init(), run(), destroy() 메서드를 구현해야 합니다.
+    """
     _default_conf_file = 'psvc.conf'
     _version_conf = 'PSVC\\version'
     _log_conf_path = 'PSVC\\log_format'
@@ -241,13 +293,16 @@ class Service(Component, ABC):
 
     def __init__(self, name='Service', root_file=None, config_file=None, level=None):
         """
-        파이썬 서비스 인스턴스를 생성합니다.
-        
-        :param self: 서비스 인스턴스
-        :param name: 서비스 이름
-        :param root_file: 루트 파일 경로
-        :param config_file: 설정 파일 경로
-        :param level: 로그 레벨
+        서비스 초기화
+
+        Args:
+            name: 서비스 이름
+            root_file: 루트 파일 경로 (보통 __file__)
+            config_file: 설정 파일 경로
+            level: 로그 레벨
+
+        Raises:
+            RuntimeError: root_file이 제공되지 않았을 때
         """
         Component.__init__(self, None, name)
         self._sigterm = asyncio.Event()
@@ -272,12 +327,21 @@ class Service(Component, ABC):
         # 시작 로그
         self.l.info('='*50)
         if level is None:
-            self.l.warning('unused log level, set to INFO, %s', level)
-        self.l.info('Service Created %s' % (self))
+            self.l.warning('사용되지 않는 로그 레벨, INFO로 설정, %s', level)
+        self.l.info('서비스 생성됨 %s' % (self))
 
 # == Status ==
 
     def _parse_args(self, argv=None):
+        """
+        명령행 인자 파싱
+
+        Args:
+            argv: 명령행 인자 리스트 (None이면 sys.argv[1:] 사용)
+
+        Returns:
+            argparse.Namespace: 파싱된 인자
+        """
         parser = argparse.ArgumentParser()
         subparsers = parser.add_subparsers(dest='mode')
         
@@ -312,6 +376,15 @@ class Service(Component, ABC):
         return parser.parse_args(argv)
    
     def _set_root_path(self, root_file):
+        """
+        루트 경로 설정
+
+        Args:
+            root_file: 루트 파일 경로
+
+        Raises:
+            RuntimeError: root_file이 None이고 frozen 상태가 아닐 때
+        """
         if getattr(sys, 'frozen', False):
             self._root_path = os.path.abspath(os.path.dirname(sys.executable))
         elif root_file:
@@ -320,12 +393,24 @@ class Service(Component, ABC):
             raise RuntimeError('Root path is not set. Provide root_file in __init__')
     
     def _set_config_file(self, config_file):
+        """
+        설정 파일 설정 및 버전 로드
+
+        Args:
+            config_file: 설정 파일 경로
+        """
         if hasattr(self, '_config'):
             del self._config
         self._config = Config(self, config_file)
         self.version = self.get_config(Service._version_conf, None, '0.0.0')
 
     def _set_logger(self, level):
+        """
+        로거 설정
+
+        Args:
+            level: 로그 레벨
+        """
         if self.level is None:
             level = self.get_config('PSVC', 'log_level', '')
             d_level = Service._log_levels[level] if level in Service._log_levels else \
@@ -342,10 +427,25 @@ class Service(Component, ABC):
         self.l.addHandler(self._fh)
 
     def _set_status(self, status: str):
-        self.l.info('Status=%s', status)
+        """
+        서비스 상태 설정
+
+        Args:
+            status: 상태 문자열 (Initting, Running, Stopping, Stopped)
+        """
+        self.l.info('상태=%s', status)
         self.status = status
 
     def path(self, path):
+        """
+        상대 경로를 절대 경로로 변환
+
+        Args:
+            path: 상대 또는 절대 경로
+
+        Returns:
+            str: 절대 경로
+        """
         if os.path.isabs(path) or self._root_path is None:
             return path
         return os.path.join(self._root_path, path)
@@ -353,22 +453,61 @@ class Service(Component, ABC):
 # == Config ==
 
     def set_config(self, section: str, key: str, value):
+        """
+        설정 값 저장
+
+        Args:
+            section: 섹션 이름
+            key: 키 이름
+            value: 설정 값
+        """
         self._config.set_config(section, key, value)
 
     def get_config(self, section: str, key: str, default=None):
+        """
+        설정 값 가져오기
+
+        Args:
+            section: 섹션 이름
+            key: 키 이름
+            default: 기본값
+
+        Returns:
+            설정 값
+        """
         return self._config.get_config(section, key, default)
 
 
 # == Operation Task Management ==
-    
+
     def append_task(self, loop:asyncio.AbstractEventLoop, coro, name):
-        self.l.debug('Append Task - %s', name)
+        """
+        비동기 작업 추가
+
+        Args:
+            loop: 이벤트 루프
+            coro: 코루틴
+            name: 작업 이름
+
+        Returns:
+            asyncio.Task: 생성된 태스크
+        """
+        self.l.debug('작업 추가 - %s', name)
         task = loop.create_task(coro, name=name)
         self._tasks.append(task)
         return task
-    
+
     async def delete_task(self, task: asyncio.Task):
-        self.l.debug('Delete Task - %s', task.get_name())
+        """
+        비동기 작업 삭제
+
+        Args:
+            task: 삭제할 태스크
+
+        Raises:
+            RuntimeError: 현재 실행 중인 태스크를 삭제하려 할 때
+        """
+        self.l.debug('작업 삭제 - %s', task.get_name())
         if task in self._tasks and not task.done():
             if task is asyncio.current_task():
                 raise RuntimeError('Cannot delete the current running task')
@@ -382,12 +521,14 @@ class Service(Component, ABC):
 
     def append_closer(self, closer: Callable[..., Any], args: list[Any]) -> None:
         """
-        서비스 종료시 호출할 함수를 등록합니다.
-        
-        :param closer: 종료시 호출할 함수
-        :type closer: Callable[..., Any]
-        :param args: 함수에 전달할 인자 리스트
-        :type args: list[Any]
+        서비스 종료 시 호출할 함수 등록
+
+        Args:
+            closer: 종료 시 호출할 함수
+            args: 함수에 전달할 인자 리스트
+
+        Raises:
+            TypeError: closer가 callable이 아니거나 args가 list/tuple이 아닐 때
         """
         if not callable(closer):
             raise TypeError("closer is not callable.")
@@ -421,7 +562,11 @@ class Service(Component, ABC):
             **pyinstaller_options: PyInstaller 추가 옵션
 
         Returns:
-            빌드된 릴리스 디렉토리 경로
+            Path: 빌드된 릴리스 디렉토리 경로
+
+        Raises:
+            RuntimeError: root_path가 설정되지 않았을 때
+            BuildError: 빌드 실패 시
 
         Example:
             service = MyService('MyApp', __file__)
@@ -443,7 +588,7 @@ class Service(Component, ABC):
             **pyinstaller_options
         )
 
-        self.l.info('Build completed: %s', version_dir)
+        self.l.info('빌드 완료: %s', version_dir)
         return version_dir
 
     def release(
@@ -465,7 +610,11 @@ class Service(Component, ABC):
             rollback_target: 롤백 대상 버전
 
         Returns:
-            메타데이터 딕셔너리
+            dict: 메타데이터 딕셔너리
+
+        Raises:
+            RuntimeError: root_path가 설정되지 않았을 때
+            FileNotFoundError: 버전을 찾을 수 없을 때
 
         Example:
             # 정보 확인
@@ -516,7 +665,7 @@ class Service(Component, ABC):
                 json.dump(metadata, f, indent=2, ensure_ascii=False)
 
             print(f"✓ Version {version} has been approved")
-            self.l.info('Version %s approved', version)
+            self.l.info('버전 %s 승인됨', version)
 
         # 정보 출력
         print(f"\n=== Release Information ===")
@@ -548,6 +697,13 @@ class Service(Component, ABC):
             from_version: 문제가 있는 버전 (deprecated 처리)
             to_version: 되돌릴 버전
             release_path: 릴리스 경로
+
+        Returns:
+            dict: 롤백 정보 (from_version, to_version, 메타데이터 포함)
+
+        Raises:
+            RuntimeError: root_path가 설정되지 않았을 때
+            FileNotFoundError: 버전을 찾을 수 없을 때
 
         Example:
             # 1.0.0에 문제가 있어서 0.9.5로 롤백
@@ -598,7 +754,7 @@ class Service(Component, ABC):
         print(f"  ✓ Rollback target {to_version} is available")
         print(f"\nRollback completed. Clients will use v{to_version}")
 
-        self.l.info('Rolled back from %s to %s', from_version, to_version)
+        self.l.info('%s에서 %s로 롤백됨', from_version, to_version)
 
         return {
             'from_version': from_version,
@@ -608,6 +764,12 @@ class Service(Component, ABC):
         }
 
     def apply(self):
+        """
+        대기 중인 업데이트 적용
+
+        Note:
+            TODO: 구현 예정
+        """
         # TODO : 구현
         pass
 
@@ -615,6 +777,11 @@ class Service(Component, ABC):
     
     
     def _apply_pending_update(self):
+        """
+        대기 중인 업데이트 적용 (.new 파일 처리)
+
+        Windows에서 .new 확장자를 가진 파일을 실제 파일로 교체합니다.
+        """
         if getattr(sys, 'frozen', False):
             exe_dir = os.path.dirname(sys.executable)
         else:
@@ -634,22 +801,30 @@ class Service(Component, ABC):
                         if os.path.exists(old_file):
                             os.remove(old_file)
                         os.rename(target_file, old_file)
-                        self.l.debug('Backed up: %s -> %s', target_file, old_file)
+                        self.l.debug('백업됨: %s -> %s', target_file, old_file)
 
                     # .new 파일을 실제 파일로 교체
                     os.rename(new_file, target_file)
-                    self.l.info('Updated: %s', target_file)
+                    self.l.info('업데이트됨: %s', target_file)
                     updated_count += 1
 
                 except Exception as e:
-                    self.l.error('Failed to apply update for %s: %s', item, e)
+                    self.l.error('%s 업데이트 적용 실패: %s', item, e)
 
         if updated_count > 0:
-            self.l.info('Applied %d pending update(s)', updated_count)
+            self.l.info('%d개의 대기 중인 업데이트 적용됨', updated_count)
 
     
     def on(self):
-        self.l.info('PyService Start %s', self)
+        """
+        서비스 시작
+
+        명령행 인자에 따라 빌드/릴리스/실행 모드로 동작합니다.
+
+        Returns:
+            int: 종료 코드 (0: 성공, 1: 실패)
+        """
+        self.l.info('PyService 시작 %s', self)
 
         
         
@@ -684,15 +859,20 @@ class Service(Component, ABC):
             )
         else:
             if self.args.mode in ('build', 'release'):
-                self.l.error('You can not build or Release in released file.')
+                self.l.error('릴리스된 파일에서는 빌드 또는 릴리스할 수 없습니다.')
             else:
-                self.l.error('Unknown mode: %s', self.args.mode)
+                self.l.error('알 수 없는 모드: %s', self.args.mode)
             return 1
-        
-        self.l.info('PyService Stopped %s', self)
+
+        self.l.info('PyService 중지됨 %s', self)
         return 0
 
     def _run(self):
+        """
+        서비스 실행 루프
+
+        이벤트 루프를 생성하고 서비스를 실행합니다.
+        """
         # Signal 핸들러 등록
         signal.signal(signal.SIGTERM, self.stop)
         self._loop = asyncio.new_event_loop()
@@ -703,10 +883,10 @@ class Service(Component, ABC):
         try:
             self._loop.run_until_complete(asyncio.gather(*self._tasks, return_exceptions=True))
         except KeyboardInterrupt as i:
-            self.l.info('Keyboard Interrupt received. Stopping service...')
+            self.l.info('키보드 인터럽트 수신됨. 서비스 중지 중...')
         finally:
             # 모든 작업 취소 및 정리
-            self.l.info('Cleaning up tasks...')
+            self.l.info('작업 정리 중...')
             for t in self._tasks:
                 t.cancel()
             self._loop.run_until_complete(asyncio.gather(*self._tasks, return_exceptions=True))
@@ -717,21 +897,34 @@ class Service(Component, ABC):
             for closer, args in self._closers:
                 closer(*args)
         except Exception as e:
-            self.l.error('Error during in closer - %s%s: %s', closer.__name__, str(args), e)
+            self.l.error('closer 실행 중 오류 - %s%s: %s', closer.__name__, str(args), e)
 
     def stop(self, signum=None, frame=None):
-        """서비스 중지. signal 핸들러로도 사용 가능"""
+        """
+        서비스 중지
+
+        signal 핸들러로도 사용 가능합니다.
+
+        Args:
+            signum: 시그널 번호 (선택)
+            frame: 프레임 객체 (선택)
+        """
         self._sigterm.set()
 
     async def _service(self):
+        """
+        서비스 메인 루프
+
+        init() -> run() -> destroy() 순서로 실행합니다.
+        """
         self._set_status('Initting')
         try:
             await self.init()
         except asyncio.CancelledError as c:
-            self.l.error('Service Cancelled while initting.')
+            self.l.error('초기화 중 서비스가 취소됨.')
             self.stop()
         except Exception as e:
-            self.l.error('== Error occurred while initting. ==')
+            self.l.error('== 초기화 중 오류 발생 ==')
             self.l.error(traceback.format_exc())
             self.stop()
         finally:
@@ -743,9 +936,9 @@ class Service(Component, ABC):
                 while not self._sigterm.is_set():
                     await self.run()
         except asyncio.CancelledError as c:
-            self.l.error('Service Cancelled while running.')
+            self.l.error('실행 중 서비스가 취소됨.')
         except Exception as e:
-            self.l.error('== Error occurred while running. ==')
+            self.l.error('== 실행 중 오류 발생 ==')
             self.l.error(traceback.format_exc())
 
         finally:
@@ -753,26 +946,48 @@ class Service(Component, ABC):
             try:
                 await self.destroy()
             except Exception as e:
-                self.l.error('== Error occurred while destorying. ==')
+                self.l.error('== 종료 중 오류 발생 ==')
                 self.l.error(traceback.format_exc())
             self._set_status('Stopped')
 
 
-# == User Defined == 
+# == User Defined ==
 
     async def init(self):
+        """
+        서비스 초기화
+
+        서비스 시작 시 호출됩니다. 하위 클래스에서 오버라이드하여 사용합니다.
+        """
         await asyncio.sleep(0.1)
 
     @abstractmethod
     async def run(self):
+        """
+        서비스 메인 로직
+
+        서비스 실행 중 반복적으로 호출됩니다.
+        하위 클래스에서 반드시 구현해야 합니다.
+        """
         pass
 
     async def destroy(self):
+        """
+        서비스 종료 처리
+
+        서비스 종료 시 호출됩니다. 하위 클래스에서 오버라이드하여 사용합니다.
+        """
         await asyncio.sleep(0.1)
 
 
 # == Repr ==
 
     def __repr__(self):
+        """
+        서비스 문자열 표현
+
+        Returns:
+            str: 서비스 이름과 상태 (예: "<MyService> - Running")
+        """
         return '<%s> - %s' % (self.name, self.status)
     
