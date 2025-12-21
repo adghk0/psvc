@@ -28,7 +28,7 @@ class Releaser(Component):
         1.0/
             program.exe
     """
-    _release_path_conf = 'PSVC\\release_path'
+    _release_path_conf = 'Releaser\\release_path'
 
     def __init__(self, svc: Service, commander: Commander, name='Releaser', parent=None):
         """

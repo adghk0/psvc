@@ -25,10 +25,8 @@ class Component:
         else:
             self.svc = svc
             self.name = svc.name+'-'+name
-            self.l = logging.getLogger(name=self.name)
-            self.l: logging.Logger
-            if self.svc._fh:
-                self.l.addHandler(self.svc._fh)
+            self.set_logger(svc.get_logger(self.name))
+            
         self._component_index = itertools.count(1)
         self._components = weakref.WeakValueDictionary()
         self._parent_index = None
@@ -39,6 +37,15 @@ class Component:
             return
         owner = parent if parent is not None else self.svc
         owner.append_child(self)
+
+    def set_logger(self, logger: logging.Logger):
+        """
+        로거 설정
+
+        Args:
+            logger: 사용할 로거 인스턴스
+        """
+        self.l = logger
 
     def append_child(self, component):
         """

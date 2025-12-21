@@ -44,7 +44,7 @@ class Config(Component):
 
         # INI/JSON 경로 분리
         self._ini_file = original_file
-        self._json_file = self._get_json_path(original_file)
+        self._config_file = self._get_json_path(original_file)
 
         # 설정 로드
         self._config = self._load_config()
@@ -63,6 +63,8 @@ class Config(Component):
             return file_path.replace('.conf', '.json')
         elif file_path.endswith('.ini'):
             return file_path.replace('.ini', '.json')
+        elif file_path.endswith('.json'):
+            return file_path
         else:
             return file_path + '.json'
 
@@ -75,13 +77,14 @@ class Config(Component):
         """
         import json
 
-        # 1. JSON 파일이 존재하면 로드
-        if os.path.exists(self._json_file):
+        self.l.info('설정 파일 로드: %s', self._config_file)
+        # 1. JSON 파일이 존재하면 로드ㅈ
+        if os.path.exists(self._config_file):
             try:
-                with open(self._json_file, 'r', encoding='utf-8') as f:
+                with open(self._config_file, 'r', encoding='utf-8') as f:
                     return json.load(f)
             except json.JSONDecodeError as e:
-                self.l.error('JSON 설정 파일 로드 실패 (%s): %s', self._json_file, e)
+                self.l.error('JSON 설정 파일 로드 실패 (%s): %s', self._config_file, e)
                 # JSON 파싱 실패 시 INI에서 재생성 시도
                 if os.path.exists(self._ini_file):
                     return self._migrate_from_ini()
@@ -90,9 +93,10 @@ class Config(Component):
         # 2. INI 파일이 존재하면 마이그레이션
         if os.path.exists(self._ini_file):
             return self._migrate_from_ini()
-
         # 3. 둘 다 없으면 빈 설정
         return {}
+    
+        
 
     def _migrate_from_ini(self) -> dict:
         """
@@ -101,7 +105,7 @@ class Config(Component):
         Returns:
             dict: 변환된 설정 딕셔너리
         """
-        self.l.info('설정 파일 마이그레이션 중: %s -> %s', self._ini_file, self._json_file)
+        self.l.info('설정 파일 마이그레이션 중: %s -> %s', self._ini_file, self._config_file)
 
         parser = configparser.ConfigParser()
         parser.read(self._ini_file, encoding='utf-8')
@@ -154,7 +158,7 @@ class Config(Component):
         if config is None:
             config = self._config
 
-        with open(self._json_file, 'w', encoding='utf-8') as f:
+        with open(self._config_file, 'w', encoding='utf-8') as f:
             json.dump(config, f, indent=2, ensure_ascii=False)
 
     def _parse_value(self, value, dtype=None):
@@ -311,6 +315,7 @@ class Service(Component, ABC):
         self._closers = []
         self._fh = None
         self.status = None
+        self.level = 0
 
         self._set_root_path(root_file)
         self.config_file = config_file
@@ -429,6 +434,25 @@ class Service(Component, ABC):
         self.l = logging.getLogger(name=self.name)
         self.l.addHandler(self._fh)
 
+        for comp in self._components.values():
+            comp.set_logger(self.get_logger(comp.name))
+    
+    def get_logger(self, name: str) -> logging.Logger:
+        """
+        하위 컴포넌트용 로거 반환
+
+        Args:
+            name: 하위 컴포넌트 이름
+
+        Returns:
+            logging.Logger: 하위 컴포넌트용 로거
+        """
+        logger = logging.getLogger(name=name)
+        logger.setLevel(self.level)
+        if self._fh:
+            logger.addHandler(self._fh)
+        return logger
+    
     def _set_status(self, status: str):
         """
         서비스 상태 설정
