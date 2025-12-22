@@ -141,7 +141,7 @@ class Config(Component):
             return
 
         # 상단에 안내 추가
-        header = f'# This file is parsed to {self._json_file}\n'
+        header = f'# This file is parsed to {self._config_file}\n'
         header += '# Please edit the JSON file instead.\n\n'
 
         with open(self._ini_file, 'w', encoding='utf-8') as f:

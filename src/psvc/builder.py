@@ -122,6 +122,10 @@ class Builder:
                 exclude_patterns=['*.conf']
             )
         """
+        # spec 파일 검증
+        if spec_file is None:
+            raise BuildError("spec 파일이 필요합니다")
+
         # 버전 검증
         if not is_valid_version(version):
             raise BuildError(f"잘못된 버전 형식: {version}")
