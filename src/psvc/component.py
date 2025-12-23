@@ -2,6 +2,7 @@ import logging
 import itertools
 import weakref
 import os
+import sys
 from typing import TYPE_CHECKING
 
 
@@ -15,9 +16,6 @@ class Component:
     Service와 다른 컴포넌트들의 기반이 되는 계층형 컴포넌트 시스템입니다.
     부모-자식 관계를 통해 컴포넌트 트리를 구성합니다.
     """
-
-    # Config 설정 경로
-    _version_conf = 'PSVC\\version'
     # Logger 설정 경로
     _log_conf_path = 'PSVC\\log_format'
     # Logger 기본 포맷
@@ -41,7 +39,7 @@ class Component:
             name: 컴포넌트 이름
             parent: 부모 컴포넌트 (None이면 svc가 부모)
         """
-        if svc == None:
+        if svc is None:
             self.svc = None
             self.name = name
             self._root_path = None
@@ -49,8 +47,10 @@ class Component:
             self.svc = svc
             self.name = svc.name+'-'+name
             self._root_path = getattr(svc, '_root_path', None)
-            self.set_logger(svc.get_logger(self.name))
-
+            # svc.level이 있으면 사용, 없으면 INFO 사용
+            level = getattr(svc, 'level', 'INFO')
+            self.make_logger(level)
+        
         self._component_index = itertools.count(1)
         self._components = weakref.WeakValueDictionary()
         self._parent_index = None
@@ -60,17 +60,89 @@ class Component:
         if self.svc is None:
             return
         owner = parent if parent is not None else self.svc
-        owner.append_child(self)
+        # owner가 append_child 메서드를 가지고 있으면 자식으로 추가
+        if hasattr(owner, 'append_child'):
+            owner.append_child(self)
 
-    def set_logger(self, logger: logging.Logger):
+    def _set_root_path(self, root_file):
         """
-        로거 설정
+        루트 경로 설정
 
         Args:
-            logger: 사용할 로거 인스턴스
+            root_file: 루트 파일 경로
+
+        Raises:
+            RuntimeError: root_file이 None이고 frozen 상태가 아닐 때
         """
+        if getattr(sys, 'frozen', False):
+            self._root_path = os.path.abspath(os.path.dirname(sys.executable))
+        elif root_file:
+            self._root_path = os.path.abspath(os.path.dirname(root_file))
+        else:
+            raise RuntimeError('Root path is not set. Provide root_file in __init__')
+
+    # == Logging Methods ==    
+    @staticmethod
+    def log_level(level) -> int:
+        """
+        로그 레벨 변환
+
+        Returns:
+            int: 로그 레벨 (logging 모듈 상수)
+        """
+        if type(level) == str:
+            d_level = Component._log_levels[level] if level in Component._log_levels else \
+                int(level) if level.isdigit() else None
+            if d_level is None:
+                d_level = logging.INFO
+            return d_level
+        elif type(level) == int:
+            return level
+        else:
+            raise ValueError('로그 레벨이 올바르지 않습니다.')
+    
+    def make_logger(self, level) -> logging.Logger:
+        """
+        로거 생성
+
+        Args:
+            level: 로그 레벨
+
+        Returns:
+            logging.Logger: 생성된 로거 인스턴스
+        """
+        if self.svc is None:
+            log_format = self.get_config(Component._log_conf_path, None, Component._default_log_format)
+            logging.basicConfig(level=level, force=True, format=log_format)
+            self.file_handler = logging.FileHandler(self.path(self.name+'.log'))
+            self.file_handler.setLevel(level)
+            self.file_handler.setFormatter(logging.Formatter(log_format))
+        else:
+            # Service의 file_handler가 아직 없으면 나중에 추가
+            self.file_handler = getattr(self.svc, 'file_handler', None)
+
+        level = Component.log_level(level)
+        logger = logging.getLogger(name=self.name)
+
+        # file_handler가 있으면 추가
+        if self.file_handler:
+            logger.addHandler(self.file_handler)
+
         self.l = logger
 
+        return logger
+
+    # == Config Proxy Methods ==
+    def set_config(self, section: str, key: str, value):
+        if self.svc is not None:
+            self.svc.set_config(section, key, value)
+        
+    def get_config(self, section: str, key: str, default=None):
+        if self.svc is not None:
+            return self.svc.get_config(section, key, default)
+        return default
+    
+    # == Component Hierarchy Management ===
     def append_child(self, component):
         """
         자식 컴포넌트 추가

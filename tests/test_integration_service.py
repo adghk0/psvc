@@ -42,7 +42,12 @@ class SimpleTestService(Service):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.start_time = None
-        self.log_file = Path(__file__).parent / 'service_lifecycle.log'
+        # frozen 상태에서는 실행 파일의 부모 디렉토리(_root_path)에 로그 작성
+        # 개발 모드에서는 스크립트 파일의 부모 디렉토리에 로그 작성
+        if getattr(sys, 'frozen', False):
+            self.log_file = Path(self._root_path) / 'service_lifecycle.log'
+        else:
+            self.log_file = Path(__file__).parent / 'service_lifecycle.log'
 
     def write_log(self, message):
         """로그 파일에 메시지 기록"""
@@ -108,7 +113,7 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[],
-    hiddenimports=['psvc', 'psvc.main', 'psvc.comp'],
+    hiddenimports=['psvc', 'psvc.main', 'psvc.comp', 'psvc.manage'],
     hookspath=[],
     hooksconfig={{}},
     runtime_hooks=[],
@@ -181,9 +186,9 @@ class TestServiceLifecycle:
             run_proc.terminate()
             raise AssertionError(f"서비스가 10초 내에 종료되지 않음: {e}")
 
-        # 5. 로그 파일 검증
-        log_file = temp_dir / 'service_lifecycle.log'
-        assert log_file.exists(), "로그 파일이 생성되지 않음"
+        # 5. 로그 파일 검증 (frozen 모드에서는 실행 파일 디렉토리에 생성됨)
+        log_file = releases_dir / 'service_lifecycle.log'
+        assert log_file.exists(), f"로그 파일이 생성되지 않음: {log_file}"
 
         log_content = log_file.read_text(encoding='utf-8')
 
@@ -219,8 +224,8 @@ class TestServiceLifecycle:
             build_proc = process_manager['start'](build_cmd)
             build_proc.wait(timeout=60)
 
-        # 로그 파일 초기화
-        log_file = temp_dir / 'service_lifecycle.log'
+        # 로그 파일 초기화 (frozen 모드에서는 실행 파일 디렉토리에 생성됨)
+        log_file = releases_dir / 'service_lifecycle.log'
         if log_file.exists():
             log_file.unlink()
 

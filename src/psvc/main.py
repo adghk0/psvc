@@ -22,7 +22,7 @@ class Service(Component, ABC):
     추상 베이스 클래스입니다. 사용자는 이 클래스를 상속하여
     init(), run(), destroy() 메서드를 구현해야 합니다.
     """
-
+    _version_conf = 'PSVC\\version'
     # Build & Release 설정 경로
     _build_spec_file_conf = 'PSVC-build\\spec_file'
     _build_release_path_conf = 'PSVC-build\\release_path'
@@ -47,10 +47,10 @@ class Service(Component, ABC):
         self._loop = None
         self._fh = None
         self.status = None
-        self.level = 0
+        self.level = level or 'INFO'
+        self.config_file = config_file or Config._default_conf_file
 
         self._set_root_path(root_file)
-        self.config_file = config_file
         self._set_config_file(self.config_file)
         self.args = parse_args(sys.argv[1:])
 
@@ -59,8 +59,18 @@ class Service(Component, ABC):
             self._set_config_file(self.args.config_file)
 
         # 로거 설정
-        self.level = self.args.log_level if hasattr(self.args, 'log_level') and self.args.log_level else level
-        self._set_logger(self.level)
+        args_level = self.args.log_level if hasattr(self.args, 'log_level') and self.args.log_level else None
+        conf_level = self.get_config('PSVC', 'log_level', '') if self.get_config('PSVC', 'log_level', '') == '' else None
+        self.level = args_level or conf_level or level or 'INFO'
+        self.make_logger(self.level)
+
+        # 자식 컴포넌트들에 file_handler 추가 (Config 등)
+        # TODO : Component-make_logger에서 처리
+        for comp in self._components.values():
+            if comp.file_handler is None and hasattr(self, 'file_handler'):
+                comp.file_handler = self.file_handler
+                if hasattr(comp, 'l') and comp.l:
+                    comp.l.addHandler(self.file_handler)
 
         # TaskManager 초기화
         self._task_manager = TaskManager(self.l)
@@ -70,23 +80,6 @@ class Service(Component, ABC):
         self.l.info('서비스 생성됨 %s' % (self))
 
 # == Status ==
-
-    def _set_root_path(self, root_file):
-        """
-        루트 경로 설정
-
-        Args:
-            root_file: 루트 파일 경로
-
-        Raises:
-            RuntimeError: root_file이 None이고 frozen 상태가 아닐 때
-        """
-        if getattr(sys, 'frozen', False):
-            self._root_path = os.path.abspath(os.path.dirname(sys.executable))
-        elif root_file:
-            self._root_path = os.path.abspath(os.path.dirname(root_file))
-        else:
-            raise RuntimeError('Root path is not set. Provide root_file in __init__')
 
     def _set_config_file(self, config_file):
         """
@@ -98,53 +91,8 @@ class Service(Component, ABC):
         if hasattr(self, '_config'):
             del self._config
         self._config = Config(self, config_file)
-        self.version = self.get_config(Component._version_conf, None, '0.0.0')
+        self.version = self.get_config(Service._version_conf, None, '0.0.0')
 
-    def _set_logger(self, level):
-        """
-        로거 설정
-
-        Args:
-            level: 로그 레벨
-        """
-        if self.level is None:
-            level = self.get_config('PSVC', 'log_level', '')
-
-        if type(level) == str:
-            d_level = Component._log_levels[level] if level in Component._log_levels else \
-                int(level) if level.isdigit() else None
-            if d_level is None:
-                d_level = logging.INFO
-            self.level = d_level
-
-        self.log_format = self.get_config(Component._log_conf_path, None, Component._default_log_format)
-
-        # 로그 핸들러 설정
-        self._fh = logging.FileHandler(self.path(self.name+'.log'))
-        self._fh.setLevel(self.level)
-        self._fh.setFormatter(logging.Formatter(self.log_format))
-        logging.basicConfig(level=self.level, force=True, format=self.log_format)
-        self.l = logging.getLogger(name=self.name)
-        self.l.addHandler(self._fh)
-
-        for comp in self._components.values():
-            comp.set_logger(self.get_logger(comp.name))
-
-    def get_logger(self, name: str) -> logging.Logger:
-        """
-        하위 컴포넌트용 로거 반환
-
-        Args:
-            name: 하위 컴포넌트 이름
-
-        Returns:
-            logging.Logger: 하위 컴포넌트용 로거
-        """
-        logger = logging.getLogger(name=name)
-        logger.setLevel(self.level)
-        if self._fh:
-            logger.addHandler(self._fh)
-        return logger
 
     def _set_status(self, status: str):
         """

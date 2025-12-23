@@ -39,7 +39,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from psvc import Service
 from psvc.cmd import Commander, command
-from psvc.release import Updater
+from psvc.update import Updater
 
 
 class UpdateTestService(Service):
@@ -199,7 +199,7 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[],
-    hiddenimports=['psvc', 'psvc.main', 'psvc.comp', 'psvc.cmd', 'psvc.network', 'psvc.release', 'psvc.utils.checksum', 'psvc.utils.version'],
+    hiddenimports=['psvc', 'psvc.main', 'psvc.comp', 'psvc.cmd', 'psvc.network', 'psvc.release', 'psvc.update', 'psvc.manage', 'psvc.utils.checksum', 'psvc.utils.version'],
     hookspath=[],
     hooksconfig={{}},
     runtime_hooks=[],
@@ -248,7 +248,7 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[],
-    hiddenimports=['psvc', 'psvc.main', 'psvc.comp', 'psvc.cmd', 'psvc.network', 'psvc.release', 'psvc.utils.checksum', 'psvc.utils.version'],
+    hiddenimports=['psvc', 'psvc.main', 'psvc.comp', 'psvc.cmd', 'psvc.network', 'psvc.release', 'psvc.update', 'psvc.manage', 'psvc.utils.checksum', 'psvc.utils.version'],
     hookspath=[],
     hooksconfig={{}},
     runtime_hooks=[],
@@ -308,6 +308,13 @@ class DummyService:
         self.l = logging.getLogger('version_client')
         self._tasks = []
         self.name = 'VersionClient'
+        self.level = 'INFO'
+
+    def append_task(self, loop, coro, name):
+        """태스크 추가"""
+        task = loop.create_task(coro, name=name)
+        self._tasks.append(task)
+        return task
 
 
 async def get_version(port, result_file):
@@ -379,6 +386,16 @@ class TestServiceUpdate:
         # === 1단계: 빌드 ===
         print("\n[1/7] 빌드 단계")
 
+        # 0. 빌드용 설정 파일 생성
+        config_content = {
+            'PSVC': {
+                'version': '1.0.0'
+            }
+        }
+        config_file = temp_dir / 'psvc.json'
+        with open(config_file, 'w', encoding='utf-8') as f:
+            json.dump(config_content, f, indent=2, ensure_ascii=False)
+
         # 1.1. 버전 1.0.0 빌드
         print("  1.1. 버전 1.0.0 빌드 중...")
         build_cmd_1 = [
@@ -399,11 +416,12 @@ class TestServiceUpdate:
         assert build_proc.wait(timeout=120) == 0, "1.1.0 빌드 실패"
         print("  ✓ 버전 1.1.0 빌드 완료")
 
-        # 1.3. 릴리스 서버 빌드
+        # 1.3. 릴리스 서버 빌드 (별도 릴리스 경로 사용)
         print("  1.3. 릴리스 서버 빌드 중...")
         build_cmd_server = [
             sys.executable, str(release_server_file),
-            'build', '-v', '1.0.0', '-f', str(release_spec_file)
+            'build', '-v', '1.0.0', '-f', str(release_spec_file),
+            '--release_path', 'server_releases'
         ]
         build_proc = process_manager['start'](build_cmd_server)
         assert build_proc.wait(timeout=120) == 0, "릴리스 서버 빌드 실패"
@@ -438,10 +456,10 @@ class TestServiceUpdate:
         # === 3단계: 서비스 실행 ===
         print("\n[3/7] 서비스 실행")
 
-        # 3.1. 릴리스 서버 실행
-        releases_dir = temp_dir / 'releases' / '1.0.0'
+        # 3.1. 릴리스 서버 실행 (server_releases 디렉토리에서)
+        server_releases_dir = temp_dir / 'server_releases' / '1.0.0'
         server_exe_name = 'release_server.exe' if sys.platform == 'win32' else 'release_server'
-        server_exe_path = releases_dir / server_exe_name
+        server_exe_path = server_releases_dir / server_exe_name
 
         print("  3.1. 릴리스 서버 시작 중...")
         server_proc = process_manager['start']([str(server_exe_path), 'run'])
@@ -476,11 +494,18 @@ class TestServiceUpdate:
 
         assert test_svc_src.exists(), f"실행 파일이 없음: {test_svc_src}"
 
+        # 실행 디렉토리 생성 및 파일 복사
         test_svc_running = temp_dir / 'running' / test_svc_exe_name
         test_svc_running.parent.mkdir(exist_ok=True)
         shutil.copy2(test_svc_src, test_svc_running)
         if sys.platform != 'win32':
             test_svc_running.chmod(0o755)
+
+        # 설정 파일도 함께 복사
+        config_src = version_dir / 'psvc.json'
+        if config_src.exists():
+            shutil.copy2(config_src, test_svc_running.parent / 'psvc.json')
+
         print(f"  ✓ 실행 파일 복사 완료: {test_svc_exe_name}")
 
         # 3.4. 복사된 서비스 실행

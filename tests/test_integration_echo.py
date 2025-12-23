@@ -106,7 +106,7 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[],
-    hiddenimports=['psvc', 'psvc.main', 'psvc.comp', 'psvc.cmd', 'psvc.network'],
+    hiddenimports=['psvc', 'psvc.main', 'psvc.comp', 'psvc.cmd', 'psvc.network', 'psvc.manage'],
     hookspath=[],
     hooksconfig={{}},
     runtime_hooks=[],
@@ -174,6 +174,13 @@ class DummyService:
         self.l = logging.getLogger('echo_client')
         self._tasks = []
         self.name = 'EchoClient'
+        self.level = 'INFO'
+
+    def append_task(self, loop, coro, name):
+        """태스크 추가"""
+        task = loop.create_task(coro, name=name)
+        self._tasks.append(task)
+        return task
 
 
 async def send_echo(message, result_file):

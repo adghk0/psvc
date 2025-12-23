@@ -144,6 +144,7 @@ class Builder:
             # 빌드 파이프라인
             dist_path = self._run_pyinstaller(spec_file, **pyinstaller_options)
             self._copy_artifacts(dist_path, version_dir, exclude_patterns)
+            self._copy_config_file(version_dir)
             checksums = self._calculate_checksums(version_dir, exclude_patterns)
             metadata = self._create_metadata(version, version_dir, checksums)
             self._save_metadata(version_dir, metadata)
@@ -279,6 +280,18 @@ class Builder:
             copied += 1
 
         print(f"  ✓ {copied}개 파일 복사 완료")
+
+    def _copy_config_file(self, destination: Path):
+        """
+        설정 파일(psvc.json) 복사
+
+        Args:
+            destination: 목적지 디렉토리
+        """
+        config_file = self.root_path / 'psvc.json'
+        if config_file.exists():
+            shutil.copy2(config_file, destination / 'psvc.json')
+            print(f"  ✓ 설정 파일 복사: psvc.json")
 
     def _calculate_checksums(
         self,

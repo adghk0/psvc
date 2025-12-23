@@ -1,7 +1,11 @@
 
 import os
 import configparser
+from typing import TYPE_CHECKING
+
 from psvc.component import Component
+if TYPE_CHECKING:
+    from psvc.main import Service
 
 class Config(Component):
     """
@@ -11,7 +15,7 @@ class Config(Component):
     """
     _default_conf_file = 'psvc.json'
 
-    def __init__(self, svc, config_file, name='Config'):
+    def __init__(self, svc: 'Service', config_file, name='Config'):
         """
         Config 초기화
 
@@ -64,7 +68,7 @@ class Config(Component):
         import json
 
         self.l.info('설정 파일 로드: %s', self._config_file)
-        # 1. JSON 파일이 존재하면 로드ㅈ
+        # 1. JSON 파일이 존재하면 로드
         if os.path.exists(self._config_file):
             try:
                 with open(self._config_file, 'r', encoding='utf-8') as f:
