@@ -4,10 +4,12 @@ import aiofiles
 import itertools
 import contextlib
 import struct
-from typing import Tuple
+from typing import Tuple, TYPE_CHECKING
 
-from .comp import Component
-from .main import Service
+from .component import Component
+
+if TYPE_CHECKING:
+    from .main import Service
 
 
 class Socket(Component):
@@ -18,7 +20,7 @@ class Socket(Component):
     """
     _max_size = 64 * 1024
 
-    def __init__(self, svc: Service, name='Socket', parent=None, callback=None, callback_end=None):
+    def __init__(self, svc: 'Service', name='Socket', parent=None, callback=None, callback_end=None):
         """
         Socket 초기화
 

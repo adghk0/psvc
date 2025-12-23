@@ -5,7 +5,8 @@ import asyncio
 import json
 from pathlib import Path
 from psvc import Service, Commander
-from psvc.release import Releaser, Updater
+from psvc.release import Releaser
+from psvc.update import Updater
 from psvc.cmd import command
 
 

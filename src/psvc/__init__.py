@@ -1,8 +1,8 @@
 from .main import Service
 from .network import Socket
 from .cmd import command, Commander
-from .release import Releaser, Updater
-from .auto_update import AutoUpdateMixin
+from .release import Releaser, ReleaseManager
+from .update import Updater
 
 __all__ = [
     'Service',
@@ -11,5 +11,5 @@ __all__ = [
     'Socket',
     'Releaser',
     'Updater',
-    'AutoUpdateMixin',
+    'ReleaseManager',
 ]

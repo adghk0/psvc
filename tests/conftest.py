@@ -229,3 +229,90 @@ def create_build():
         callable: create_dummy_build 함수
     """
     return create_dummy_build
+
+
+@pytest.fixture
+def process_manager(temp_dir):
+    """
+    프로세스 생명주기 관리 헬퍼
+
+    통합 테스트에서 서비스 프로세스를 시작하고 정리하는 기능 제공.
+    테스트 종료 시 모든 프로세스를 자동으로 강제 종료합니다.
+
+    Yields:
+        dict: 프로세스 관리 함수 딕셔너리
+            - 'start': 프로세스 시작 함수
+            - 'wait_port': 포트 리스닝 대기 함수
+            - 'processes': 실행 중인 프로세스 리스트
+    """
+    import subprocess
+    import socket
+    import time
+
+    processes = []
+
+    def start_process(cmd, log_file=None, **kwargs):
+        """
+        프로세스 시작
+
+        Args:
+            cmd: 실행할 명령 (리스트)
+            log_file: 로그 파일 경로 (optional)
+            **kwargs: subprocess.Popen에 전달할 추가 인자
+
+        Returns:
+            subprocess.Popen: 시작된 프로세스 객체
+        """
+        default_kwargs = {
+            'stdout': subprocess.PIPE,
+            'stderr': subprocess.PIPE,
+            'cwd': str(temp_dir)
+        }
+        default_kwargs.update(kwargs)
+
+        proc = subprocess.Popen(cmd, **default_kwargs)
+        processes.append(proc)
+        return proc
+
+    def wait_for_port(port, timeout=10):
+        """
+        포트가 리스닝 상태가 될 때까지 대기
+
+        Args:
+            port: 대기할 포트 번호
+            timeout: 타임아웃 (초)
+
+        Returns:
+            bool: 포트가 열렸으면 True, 타임아웃 시 False
+        """
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(0.1)
+                result = sock.connect_ex(('localhost', port))
+                sock.close()
+                if result == 0:
+                    return True
+            except Exception:
+                pass
+            time.sleep(0.1)
+        return False
+
+    yield {
+        'start': start_process,
+        'wait_port': wait_for_port,
+        'processes': processes
+    }
+
+    # 정리: 모든 프로세스 강제 종료
+    for proc in processes:
+        if proc.poll() is None:  # 아직 실행 중이면
+            try:
+                proc.terminate()
+                proc.wait(timeout=5)
+            except Exception:
+                try:
+                    proc.kill()  # terminate 실패 시 강제 종료
+                except Exception:
+                    pass

@@ -1,10 +1,13 @@
 import asyncio
 import json
 import inspect
+from typing import TYPE_CHECKING
 
-from .comp import Component
-from .main import Service
+from .component import Component
 from .network import Socket
+
+if TYPE_CHECKING:
+    from .main import Service
 
 def command(_func=None, *, ident=None):
     """
@@ -78,7 +81,7 @@ class Commander(Component):
     Socket 위에서 JSON 명령어 기반 통신을 제공합니다.
     """
 
-    def __init__(self, svc: Service, name='Commander', parent=None):
+    def __init__(self, svc: 'Service', name='Commander', parent=None):
         """
         Commander 초기화
 

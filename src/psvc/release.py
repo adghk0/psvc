@@ -1,14 +1,22 @@
-import asyncio
+"""
+릴리스 서버 모듈
+
+빌드된 버전을 제공하고 클라이언트의 업데이트 요청을 처리합니다.
+"""
+
 import os
 import sys
 import subprocess
 import json
+import shutil
+from pathlib import Path
+from typing import TYPE_CHECKING
 
-from .comp import Component
-from .main import Service
+from .component import Component
 from .cmd import Commander, command
-from .utils.version import compare_versions
-from .utils.checksum import verify_checksum
+
+if TYPE_CHECKING:
+    from .main import Service
 
 
 class Releaser(Component):
@@ -30,7 +38,7 @@ class Releaser(Component):
     """
     _release_path_conf = 'Releaser\\release_path'
 
-    def __init__(self, svc: Service, commander: Commander, name='Releaser', parent=None):
+    def __init__(self, svc: 'Service', commander: Commander, name='Releaser', parent=None):
         """
         Releaser 초기화
 
@@ -321,640 +329,311 @@ class Releaser(Component):
                                    {'error': str(e)}, cid)
 
 
-class Updater(Component):
+class ReleaseManager:
     """
-    업데이트 클라이언트 컴포넌트
-    Commander에 붙이면 자동으로 업데이트 확인 및 다운로드 기능 활성화
+    릴리스 관리 클래스
 
-    사용 예시:
-        updater = Updater(service, commander)
-
-        # 업데이트 확인
-        has_update = await updater.check_update()
-        if has_update:
-            await updater.download_and_install()
+    빌드된 버전의 승인, 롤백, 적용 기능을 제공합니다.
     """
-    _update_path_conf = 'PSVC\\update_path'
 
-    def __init__(
+    def __init__(self, service_name: str, root_path: str, release_path: str = None, logger=None):
+        """
+        ReleaseManager 초기화
+
+        Args:
+            service_name: 서비스 이름
+            root_path: 서비스 루트 경로
+            release_path: 릴리스 경로 (기본: {root_path}/releases)
+            logger: 로거 인스턴스
+        """
+        self.service_name = service_name
+        self.root_path = root_path
+        self.release_path = Path(release_path) if release_path else Path(root_path) / 'releases'
+        self.logger = logger
+
+    def approve(
         self,
-        svc: Service,
-        commander: Commander,
-        name='Updater',
-        parent=None,
-        timeout: float = 30.0
-    ):
+        version: str,
+        release_notes: str = None,
+        rollback_target: str = None
+    ) -> dict:
         """
-        Updater 초기화
+        버전 승인
 
         Args:
-            svc: 서비스 인스턴스
-            commander: Commander 인스턴스
-            name: 컴포넌트 이름
-            parent: 부모 컴포넌트
-            timeout: 서버 응답 대기 타임아웃 (초)
-        """
-        super().__init__(svc, name, parent)
-        self._cmdr = commander
-        self._timeout = timeout
-
-        # 응답 데이터
-        self._available_versions = []
-        self._latest_version = None
-        self._download_status = None
-        self._download_error = None
-
-        # 🔒 동기화 이벤트 (blocking 제어용)
-        self._versions_received = asyncio.Event()
-        self._latest_received = asyncio.Event()
-        self._download_completed = asyncio.Event()
-
-        # 다운로드 경로
-        self._download_path = self.svc.get_config(Updater._update_path_conf, None, 'updates')
-        full_download_path = self.svc.path(self._download_path)
-        os.makedirs(full_download_path, exist_ok=True)
-
-        self.l.info('Updater 초기화됨, 다운로드 경로: %s', full_download_path)
-
-        # 명령어 자동 등록
-        self._register_commands()
-
-    def _register_commands(self):
-        """Updater가 받을 명령어들을 Commander에 자동 등록"""
-        self._cmdr.set_command(
-            self._cmd_receive_versions,
-            self._cmd_receive_latest_version,
-            self._cmd_download_start,
-            self._cmd_download_complete,
-            self._cmd_download_failed,
-            self._cmd_apply_update
-        )
-        self.l.debug('Updater 명령어 등록됨')
-
-    async def fetch_versions(self, cid=1):
-        """
-        서버로부터 사용 가능한 버전 목록 가져오기 (Blocking)
-
-        타임아웃 내에 응답을 기다립니다.
-
-        Args:
-            cid: 연결 ID
+            version: 승인할 버전
+            release_notes: 릴리스 노트
+            rollback_target: 롤백 대상 버전
 
         Returns:
-            list: 사용 가능한 버전 목록
+            dict: 메타데이터 딕셔너리
 
         Raises:
-            TimeoutError: 타임아웃 내에 응답 없음
+            FileNotFoundError: 버전을 찾을 수 없을 때
         """
-        self.l.info('서버로부터 사용 가능한 버전 목록 가져오는 중')
+        version_dir = self.release_path / version
+        status_file = version_dir / 'status.json'
 
-        # 이벤트 초기화
-        self._versions_received.clear()
-        self._available_versions = []
-
-        # 요청 전송
-        await self._cmdr.send_command('__request_versions__', {}, cid)
-
-        # 🔒 응답 대기 (blocking)
-        try:
-            await asyncio.wait_for(
-                self._versions_received.wait(),
-                timeout=self._timeout
-            )
-            return self._available_versions
-        except asyncio.TimeoutError:
-            self.l.error('버전 목록 대기 타임아웃 (%.1f초)', self._timeout)
-            raise TimeoutError(f'{self._timeout}초 내에 서버 응답 없음')
-
-    async def fetch_latest_version(self, cid=1):
-        """
-        서버로부터 최신 버전 정보 가져오기 (Blocking)
-
-        타임아웃 내에 응답을 기다립니다.
-
-        Args:
-            cid: 연결 ID
-
-        Returns:
-            str: 최신 버전, 없으면 None
-
-        Raises:
-            TimeoutError: 타임아웃 내에 응답 없음
-        """
-        self.l.info('서버로부터 최신 버전 정보 가져오는 중')
-
-        # 이벤트 초기화
-        self._latest_received.clear()
-        self._latest_version = None
-
-        # 요청 전송
-        await self._cmdr.send_command('__request_latest_version__', {}, cid)
-
-        # 🔒 응답 대기 (blocking)
-        try:
-            await asyncio.wait_for(
-                self._latest_received.wait(),
-                timeout=self._timeout
-            )
-            return self._latest_version
-        except asyncio.TimeoutError:
-            self.l.error('최신 버전 대기 타임아웃 (%.1f초)', self._timeout)
-            raise TimeoutError(f'{self._timeout}초 내에 서버 응답 없음')
-
-    async def check_update(self, cid=1):
-        """
-        업데이트 확인
-
-        Args:
-            cid: 연결 ID
-
-        Returns:
-            bool: 업데이트 가능 여부
-        """
-        latest = await self.fetch_latest_version(cid)
-        if latest is None:
-            self.l.warning('서버로부터 버전 정보를 사용할 수 없음')
-            return False
-
-        current = self.svc.version
-        self.l.info('버전 확인: current=%s, latest=%s', current, latest)
-
-        return compare_versions(latest, current) > 0
-
-    async def download_update(self, version=None, cid=1):
-        """
-        업데이트 다운로드 (Blocking)
-
-        다운로드 완료까지 대기합니다.
-
-        Args:
-            version: 다운로드할 버전 (None이면 최신 버전)
-            cid: 연결 ID
-
-        Returns:
-            str: 다운로드된 버전
-
-        Raises:
-            ValueError: 버전 정보 없음
-            TimeoutError: 다운로드 타임아웃
-            RuntimeError: 다운로드 실패
-        """
-        if version is None:
-            version = self._latest_version
-
-        if version is None:
-            raise ValueError('버전이 지정되지 않았고 최신 버전 정보도 없음')
-
-        self.l.info('버전 %s 다운로드 요청 중', version)
-
-        # 이벤트 및 상태 초기화
-        self._download_completed.clear()
-        self._download_status = None
-        self._download_error = None
-
-        # 다운로드 요청
-        await self._cmdr.send_command('__download_update__', {'version': version}, cid)
-
-        # 🔒 다운로드 완료 대기 (blocking)
-        try:
-            await asyncio.wait_for(
-                self._download_completed.wait(),
-                timeout=self._timeout * 3  # 다운로드는 더 긴 타임아웃
+        if not status_file.exists():
+            raise FileNotFoundError(
+                f"Version {version} not found. "
+                f"Build it first using service.build()"
             )
 
-            # 에러 체크
-            if self._download_error:
-                raise RuntimeError(f'다운로드 실패: {self._download_error}')
+        # 메타데이터 읽기
+        with open(status_file, 'r', encoding='utf-8') as f:
+            metadata = json.load(f)
 
-            self.l.info('다운로드 완료: %s', self._download_status)
-            return self._download_status
+        # 승인 처리
+        print(f"\n=== Approving {self.service_name} v{version} ===")
 
-        except asyncio.TimeoutError:
-            self.l.error('다운로드 대기 타임아웃 (%.1f초)', self._timeout * 3)
-            raise TimeoutError(f'{self._timeout * 3}초 내에 다운로드 완료되지 않음')
+        metadata['status'] = 'approved'
 
-    def _get_install_paths(self):
+        if release_notes:
+            metadata['release_notes'] = release_notes
+
+        if rollback_target:
+            metadata['rollback_target'] = rollback_target
+
+        # 저장
+        with open(status_file, 'w', encoding='utf-8') as f:
+            json.dump(metadata, f, indent=2, ensure_ascii=False)
+
+        print(f"✓ Version {version} has been approved")
+        if self.logger:
+            self.logger.info('버전 %s 승인됨', version)
+
+        return metadata
+
+    def get_info(self, version: str) -> dict:
         """
-        설치 경로 확인
-
-        Returns:
-            tuple: (실행 디렉토리, 실행 파일명)
-        """
-        # 서비스의 root_path가 설정되어 있으면 사용
-        if self.svc._root_path:
-            exe_dir = self.svc._root_path
-            # PyInstaller 환경인지 확인
-            if getattr(sys, 'frozen', False):
-                exe_name = os.path.basename(sys.executable)
-            else:
-                exe_name = os.path.basename(sys.argv[0])
-        # PyInstaller 환경 확인
-        elif getattr(sys, 'frozen', False):
-            # PyInstaller로 패키징된 실행 파일
-            exe_path = sys.executable
-            exe_dir = os.path.dirname(exe_path)
-            exe_name = os.path.basename(exe_path)
-        else:
-            # 개발 환경 (Python 스크립트)
-            exe_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
-            exe_name = os.path.basename(sys.argv[0])
-
-        return exe_dir, exe_name
-
-    def _create_backup(self):
-        """
-        현재 버전 백업
-
-        Returns:
-            str: 백업 디렉토리 경로, 실행 파일이 없으면 None
-        """
-        import shutil
-        from datetime import datetime
-
-        exe_dir, exe_name = self._get_install_paths()
-        exe_path = os.path.join(exe_dir, exe_name)
-
-        if not os.path.exists(exe_path):
-            self.l.warning('현재 실행 파일을 찾을 수 없음: %s', exe_path)
-            return None
-
-        # 백업 디렉토리 생성 (타임스탬프)
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        backup_dir = os.path.join(exe_dir, f'backup_{timestamp}')
-        os.makedirs(backup_dir, exist_ok=True)
-
-        # 현재 버전의 모든 파일 백업
-        for item in os.listdir(exe_dir):
-            item_path = os.path.join(exe_dir, item)
-            if os.path.isfile(item_path) and not item.startswith('backup_'):
-                backup_path = os.path.join(backup_dir, item)
-                shutil.copy2(item_path, backup_path)
-                self.l.debug('백업됨: %s', item)
-
-        self.l.info('백업 생성됨: %s', backup_dir)
-        return backup_dir
-
-    def _deploy_files(self, version):
-        """
-        다운로드된 파일을 설치 디렉토리로 배포
+        버전 정보 조회
 
         Args:
-            version: 배포할 버전
+            version: 조회할 버전
+
+        Returns:
+            dict: 메타데이터 딕셔너리
 
         Raises:
-            FileNotFoundError: 다운로드된 버전이 없을 때
-
-        Note:
-            Windows: .new 확장자로 저장 (재시작 시 교체)
-            Linux: 직접 덮어쓰기
+            FileNotFoundError: 버전을 찾을 수 없을 때
         """
-        import shutil
+        version_dir = self.release_path / version
+        status_file = version_dir / 'status.json'
 
-        # 다운로드 경로
-        download_dir = os.path.join(self.svc.path(self._download_path), version)
-        if not os.path.exists(download_dir):
-            raise FileNotFoundError(f'다운로드된 버전을 찾을 수 없음: {download_dir}')
+        if not status_file.exists():
+            raise FileNotFoundError(f"Version {version} not found")
 
-        # 설치 경로
-        exe_dir, _ = self._get_install_paths()
-        self.l.info('%s에서 %s로 배포 중', download_dir, exe_dir)
+        # 메타데이터 읽기
+        with open(status_file, 'r', encoding='utf-8') as f:
+            metadata = json.load(f)
 
-        # 다운로드된 모든 파일 배포
+        # 정보 출력
+        print(f"\n=== Release Information ===")
+        print(f"  Version: {metadata['version']}")
+        print(f"  Status: {metadata['status']}")
+        print(f"  Build time: {metadata['build_time']}")
+        print(f"  Platform: {metadata['platform']}")
+        print(f"  Files: {len(metadata['files'])} files")
+        print(f"  Total size: {sum(f['size'] for f in metadata['files']) / 1024 / 1024:.2f} MB")
+
+        if metadata.get('release_notes'):
+            print(f"  Release notes: {metadata['release_notes']}")
+
+        if metadata.get('rollback_target'):
+            print(f"  Rollback target: {metadata['rollback_target']}")
+
+        return metadata
+
+    def rollback(
+        self,
+        from_version: str,
+        to_version: str
+    ) -> dict:
+        """
+        버전 롤백 (문제 버전 deprecated 처리)
+
+        Args:
+            from_version: 문제가 있는 버전 (deprecated 처리)
+            to_version: 되돌릴 버전
+
+        Returns:
+            dict: 롤백 정보 (from_version, to_version, 메타데이터 포함)
+
+        Raises:
+            FileNotFoundError: 버전을 찾을 수 없을 때
+        """
+        print(f"\n=== Rolling back from v{from_version} to v{to_version} ===")
+
+        # 1. from_version을 deprecated 처리
+        from_dir = self.release_path / from_version
+        from_status_file = from_dir / 'status.json'
+
+        if not from_status_file.exists():
+            raise FileNotFoundError(f"Version {from_version} not found")
+
+        with open(from_status_file, 'r', encoding='utf-8') as f:
+            from_metadata = json.load(f)
+
+        from_metadata['status'] = 'deprecated'
+        from_metadata['rollback_target'] = to_version
+
+        with open(from_status_file, 'w', encoding='utf-8') as f:
+            json.dump(from_metadata, f, indent=2, ensure_ascii=False)
+
+        print(f"  ✓ Version {from_version} marked as deprecated")
+
+        # 2. to_version 확인
+        to_dir = self.release_path / to_version
+        to_status_file = to_dir / 'status.json'
+
+        if not to_status_file.exists():
+            raise FileNotFoundError(f"Rollback target {to_version} not found")
+
+        with open(to_status_file, 'r', encoding='utf-8') as f:
+            to_metadata = json.load(f)
+
+        if to_metadata['status'] != 'approved':
+            print(f"  Warning: Target version {to_version} is not approved")
+            print(f"  Current status: {to_metadata['status']}")
+
+        print(f"  ✓ Rollback target {to_version} is available")
+        print(f"\nRollback completed. Clients will use v{to_version}")
+
+        if self.logger:
+            self.logger.info('%s에서 %s로 롤백됨', from_version, to_version)
+
+        return {
+            'from_version': from_version,
+            'to_version': to_version,
+            'from_metadata': from_metadata,
+            'to_metadata': to_metadata
+        }
+
+    @staticmethod
+    def apply(root_path: str, config_getter, logger):
+        """
+        다운로드된 버전을 root_path로 복사 (자기 자신 교체)
+
+        업데이트 시퀀스의 핵심 단계:
+        1. saved_args.json에서 버전 정보 및 원래 실행 인자 로드
+        2. 다운로드된 파일들을 root_path로 복사
+        3. 권한 복구 (Linux)
+        4. run 모드로 재시작
+
+        Args:
+            root_path: 서비스 루트 경로
+            config_getter: config 값을 가져오는 함수
+            logger: 로거 인스턴스
+        """
+        logger.info('apply 모드 시작: 업데이트 적용 중')
+
+        # 1. update_path 확인
+        update_path_conf = 'PSVC\\update_path'
+        update_path = config_getter(update_path_conf, None, 'updates')
+        full_update_path = os.path.join(root_path, update_path) if not os.path.isabs(update_path) else update_path
+
+        if not os.path.exists(full_update_path):
+            logger.error('업데이트 경로가 존재하지 않음: %s', full_update_path)
+            raise FileNotFoundError(f'업데이트 경로 없음: {full_update_path}')
+
+        # 2. 최신 다운로드 버전 찾기 (saved_args.json이 있는 디렉토리)
+        version_dir = None
+        saved_args_path = None
+
+        for entry in os.listdir(full_update_path):
+            potential_dir = os.path.join(full_update_path, entry)
+            potential_args_file = os.path.join(potential_dir, 'saved_args.json')
+
+            if os.path.isdir(potential_dir) and os.path.exists(potential_args_file):
+                version_dir = potential_dir
+                saved_args_path = potential_args_file
+                break
+
+        if not version_dir or not saved_args_path:
+            logger.error('saved_args.json을 찾을 수 없음 (업데이트 파일 없음)')
+            raise FileNotFoundError('업데이트할 버전을 찾을 수 없음')
+
+        # 3. saved_args.json 로드
+        with open(saved_args_path, 'r', encoding='utf-8') as f:
+            saved_args = json.load(f)
+
+        version = saved_args.get('version', 'unknown')
+        original_argv = saved_args.get('argv', [])
+        timestamp = saved_args.get('timestamp', '')
+
+        logger.info('업데이트 적용: 버전 %s (생성: %s)', version, timestamp)
+        logger.info('저장된 인자: %s', original_argv)
+
+        # 4. 파일 복사 (version_dir의 모든 파일 → root_path)
         deployed_count = 0
-        for root, dirs, files in os.walk(download_dir):
-            for file_name in files:
-                src_path = os.path.join(root, file_name)
-                rel_path = os.path.relpath(src_path, download_dir)
 
-                if sys.platform == 'win32':
-                    # Windows: .new 확장자로 저장
-                    dest_path = os.path.join(exe_dir, rel_path + '.new')
-                else:
-                    # Linux: 직접 덮어쓰기
-                    dest_path = os.path.join(exe_dir, rel_path)
+        for root, _, files in os.walk(version_dir):
+            for file_name in files:
+                # saved_args.json은 복사하지 않음
+                if file_name == 'saved_args.json':
+                    continue
+
+                src_path = os.path.join(root, file_name)
+                rel_path = os.path.relpath(src_path, version_dir)
+                dest_path = os.path.join(root_path, rel_path)
 
                 # 디렉토리 생성
                 dest_dir = os.path.dirname(dest_path)
-                if dest_dir:  # dest_dir가 빈 문자열이 아닐 때만
+                if dest_dir:
                     os.makedirs(dest_dir, exist_ok=True)
 
-                # 파일 복사
-                self.l.info('복사 중: %s -> %s', src_path, dest_path)
+                # 파일 복사 (메타데이터 보존)
+                logger.info('복사: %s → %s', rel_path, dest_path)
                 shutil.copy2(src_path, dest_path)
 
-                # 실행 권한 유지 (Linux)
+                # 권한 복구 (Linux)
                 if sys.platform != 'win32':
                     src_stat = os.stat(src_path)
                     os.chmod(dest_path, src_stat.st_mode)
 
                 deployed_count += 1
 
-        self.l.info('버전 %s에 대해 %d개 파일 배포됨', version, deployed_count)
+        logger.info('버전 %s에 대해 %d개 파일 배포 완료', version, deployed_count)
 
-    def _update_version_config(self, new_version):
-        """
-        Config 파일의 버전 정보 업데이트
+        # 5. 검증 (기본적인 파일 존재 확인)
+        if deployed_count == 0:
+            logger.error('배포된 파일이 없음 - 업데이트 실패')
+            raise RuntimeError('업데이트 파일이 비어있음')
 
-        Args:
-            new_version: 새 버전
-        """
-        self.svc.set_config('PSVC', 'version', new_version)
-        self.svc.version = new_version
-        self.l.info('Config에서 버전 업데이트됨: %s', new_version)
+        # 6. run 모드로 재시작
+        def start_run_mode(executable, original_argv):
+            """run 모드로 재시작"""
+            # original_argv[0]은 프로그램 경로
+            # mode가 'apply'인 경우 제거하고 기본 run 모드로 실행
+            run_args = [executable]
 
-    async def install_update(self, version=None):
-        """
-        다운로드된 업데이트 설치
+            # 원래 인자에서 mode 관련 부분 제거
+            skip_next = False
+            for arg in original_argv[1:]:  # argv[0]은 프로그램 경로
+                if skip_next:
+                    skip_next = False
+                    continue
 
-        Args:
-            version: 설치할 버전 (None이면 다운로드된 최신 버전)
+                if arg in ('apply', 'build', 'release'):
+                    # mode 인자는 제외
+                    continue
+                elif arg in ('--root_file', '--config_file', '--version_dir'):
+                    # 다음 인자도 건너뛰기
+                    skip_next = True
+                    continue
 
-        Raises:
-            ValueError: 설치할 버전 정보 없음
-            RuntimeError: 설치 실패
-        """
-        if version is None:
-            version = self._download_status or self._latest_version
+                run_args.append(arg)
 
-        if version is None:
-            raise ValueError('설치할 버전이 없음')
-
-        self.l.info('업데이트 설치 중: %s', version)
-
-        # 백업 생성
-        backup_dir = self._create_backup()
-
-        try:
-            # 파일 배포
-            self._deploy_files(version)
-
-            # Config 버전 업데이트
-            self._update_version_config(version)
-
-            self.l.info('설치 완료: %s', version)
-
-        except Exception as e:
-            self.l.error('설치 실패: %s', e)
-            # 롤백 (필요시)
-            if backup_dir and os.path.exists(backup_dir):
-                self.l.warning('롤백이 구현되지 않음, 백업 저장 위치: %s', backup_dir)
-            raise RuntimeError(f'설치 실패: {e}') from e
-
-    async def download_and_install(self, cid=1, restart=True):
-        """
-        업데이트 다운로드 및 설치 (재시작)
-
-        Args:
-            cid: 연결 ID
-            restart: 설치 후 재시작 여부
-
-        Returns:
-            bool: 업데이트 수행 여부
-        """
-        if not await self.check_update(cid):
-            self.l.info('이미 최신 버전')
-            return False
-
-        # 다운로드
-        await self.download_update(cid=cid)
-
-        # 설치
-        await self.install_update()
-
-        # 재시작
-        if restart:
-            await self.restart_service()
-
-        return True
-
-    async def restart_service(self):
-        """서비스 재시작 (안전한 종료 후 apply 모드로 새 프로세스 시작)"""
-        self.l.info('업데이트를 위한 재시작 준비 중...')
-
-        # 1. apply 모드로 새 프로세스 시작 함수 정의
-        def start_apply_mode(executable):
-            """종료 후 apply 모드로 새 프로세스 시작"""
-            # apply 모드로 실행 (saved_args.json이 자동으로 로드됨)
-            apply_args = [executable, 'apply']
-
-            self.l.info('apply 모드로 재시작: %s', apply_args)
-
-            if sys.platform == 'win32':
-                subprocess.Popen(apply_args)
-            else:
-                subprocess.Popen(apply_args, start_new_session=True)
-
-        # 2. closer로 등록 (on() 종료 시 실행됨)
-        executable = sys.executable
-        self.svc.append_closer(start_apply_mode, [executable])
-        self.l.info('종료 후 apply 모드로 재시작 예약됨')
-
-        # 3. 서비스 중지 (destroy()는 _service의 finally 블록에서 자동 호출됨)
-        self.l.info('현재 서비스 중지 중')
-        self.svc.stop()
-
-    @command(ident='__receive_versions__')
-    async def _cmd_receive_versions(self, cmdr: Commander, body, cid):
-        """
-        서버로부터 버전 목록 수신
-
-        Args:
-            cmdr: Commander 인스턴스 (미사용)
-            body: 버전 목록
-            cid: 클라이언트 연결 ID (미사용)
-        """
-        self._available_versions = body
-        self.l.info('%d개 버전 수신됨: %s', len(body), body)
-        # 🔓 이벤트 설정 (blocking 해제)
-        self._versions_received.set()
-
-    @command(ident='__receive_latest_version__')
-    async def _cmd_receive_latest_version(self, cmdr: Commander, body, cid):
-        """
-        서버로부터 최신 버전 정보 수신
-
-        Args:
-            cmdr: Commander 인스턴스 (미사용)
-            body: 최신 버전
-            cid: 클라이언트 연결 ID (미사용)
-        """
-        self._latest_version = body
-        self.l.info('최신 버전 수신됨: %s', body)
-        # 🔓 이벤트 설정 (blocking 해제)
-        self._latest_received.set()
-
-    @command(ident='__download_start__')
-    async def _cmd_download_start(self, cmdr: Commander, body, cid):
-        """
-        다운로드 시작 알림 (다중 파일 지원)
-
-        Args:
-            cmdr: Commander 인스턴스
-            body: 다운로드 정보 (version, files, total_size, file_count)
-            cid: 클라이언트 연결 ID
-        """
-        version = body.get('version')
-        files = body.get('files', [])
-        total_size = body.get('total_size', 0)
-        file_count = body.get('file_count', 0)
-
-        self.l.info('다운로드 시작: version=%s, %d개 파일 (%.2f MB)',
-                   version, file_count, total_size / 1024 / 1024)
-
-        # 버전 디렉토리 생성
-        version_dir = os.path.join(self.svc.path(self._download_path), version)
-        os.makedirs(version_dir, exist_ok=True)
-
-        # 각 파일 순차 수신
-        for file_info in files:
-            file_path = file_info['path']
-            expected_checksum = file_info['checksum']
-            expected_size = file_info['size']
-
-            # 전체 경로 생성
-            full_path = os.path.join(version_dir, file_path)
-
-            # 하위 디렉토리 생성
-            os.makedirs(os.path.dirname(full_path), exist_ok=True)
-
-            self.l.debug('파일 수신 중: %s (%d bytes)', file_path, expected_size)
-
-            try:
-                # 파일 수신
-                await cmdr.sock().recv_file(full_path, cid)
-
-                # 체크섬 검증
-                if not verify_checksum(full_path, expected_checksum):
-                    raise ValueError(f'{file_path}의 체크섬 검증 실패')
-
-                # 파일 크기 검증
-                actual_size = os.path.getsize(full_path)
-                if actual_size != expected_size:
-                    raise ValueError(
-                        f'{file_path}의 파일 크기 불일치: '
-                        f'예상 {expected_size}, 실제 {actual_size}'
-                    )
-
-                self.l.debug('파일 검증됨: %s', file_path)
-
-            except Exception as e:
-                self.l.error('파일 수신 실패 %s: %s', file_path, e)
-                # 부분 다운로드 실패 시 정리
-                if os.path.exists(full_path):
-                    os.remove(full_path)
-                raise
-
-        self.l.info('버전 %s의 모든 파일 수신 및 검증 완료', version)
-
-    @command(ident='__download_complete__')
-    async def _cmd_download_complete(self, cmdr: Commander, body, cid):
-        """
-        다운로드 완료 알림
-
-        Args:
-            cmdr: Commander 인스턴스 (미사용)
-            body: 완료 정보 (version 포함)
-            cid: 클라이언트 연결 ID (미사용)
-        """
-        from datetime import datetime
-
-        version = body.get('version')
-        self.l.info('다운로드 완료: version=%s', version)
-
-        # 상태 저장
-        self._download_status = version
-        self._download_error = None
-
-        # sys.argv 저장 (다운로드 완료 후)
-        try:
-            download_dir = os.path.join(self.svc.path(self._download_path), version)
-
-            saved_args = {
-                'argv': sys.argv,
-                'version': version,
-                'timestamp': datetime.now().isoformat()
-            }
-
-            args_file = os.path.join(download_dir, 'saved_args.json')
-            with open(args_file, 'w', encoding='utf-8') as f:
-                json.dump(saved_args, f, indent=2, ensure_ascii=False)
-
-            self.l.info('sys.argv 저장됨: %s', args_file)
-            self.l.debug('저장된 인자: %s', sys.argv)
-        except Exception as e:
-            self.l.error('sys.argv 저장 실패: %s', e)
-            # 저장 실패해도 다운로드는 성공으로 처리 (apply 시 기본값 사용)
-
-        # 🔓 이벤트 설정 (blocking 해제)
-        self._download_completed.set()
-
-    @command(ident='__download_failed__')
-    async def _cmd_download_failed(self, cmdr: Commander, body, cid):
-        """
-        다운로드 실패 알림
-
-        Args:
-            cmdr: Commander 인스턴스 (미사용)
-            body: 실패 정보 (error 포함)
-            cid: 클라이언트 연결 ID (미사용)
-        """
-        error = body.get('error')
-        self.l.error('다운로드 실패: %s', error)
-
-        # 에러 저장
-        self._download_status = None
-        self._download_error = error
-
-        # 🔓 이벤트 설정 (blocking 해제)
-        self._download_completed.set()
-
-    @command(ident='__apply_update__')
-    async def _cmd_apply_update(self, cmdr: Commander, body, cid):
-        """
-        원격 업데이트 명령 수신 (서버에서 강제 업데이트)
-
-        서버로부터 강제 업데이트 명령을 받으면 자동으로:
-        1. 지정된 버전 다운로드
-        2. 재시작 (apply 모드로 전환)
-
-        Args:
-            cmdr: Commander 인스턴스 (미사용)
-            body: 업데이트 정보
-                {
-                    'version': str,  # 업데이트할 버전
-                    'restart': bool  # 즉시 재시작 여부 (기본: True)
-                }
-            cid: 클라이언트 연결 ID
-        """
-        version = body.get('version')
-        restart = body.get('restart', True)
-
-        self.l.info('서버로부터 강제 업데이트 명령 수신: version=%s, restart=%s',
-                   version, restart)
+            logger.info('run 모드로 재시작: %s', run_args)
+            subprocess.Popen(run_args, start_new_session=(sys.platform != 'win32'))
 
         try:
-            # 1. 버전 다운로드
-            self.l.info('버전 %s 다운로드 시작', version)
-            success = await self.download_update(version=version, cid=cid)
-
-            if not success:
-                raise RuntimeError(f'버전 {version} 다운로드 실패: {self._download_error}')
-
-            self.l.info('버전 %s 다운로드 완료', version)
-
-            # 2. 재시작 (apply 모드로 전환)
-            if restart:
-                self.l.info('apply 모드로 재시작 중')
-                await self.restart_service()
-            else:
-                self.l.info('다운로드 완료 (재시작 보류)')
-
+            start_run_mode(sys.executable, original_argv)
+            logger.info('apply 완료, 프로세스 종료')
         except Exception as e:
-            self.l.exception('강제 업데이트 처리 실패')
-            # 에러 응답 (선택 사항)
-            try:
-                await cmdr.send_command('__update_failed__',
-                                       {'error': str(e)}, cid)
-            except Exception:
-                pass  # 에러 응답 실패는 무시
+            logger.error('재시작 실패: %s', e)
+            raise
 
+        # apply 프로세스 종료
+        sys.exit(0)

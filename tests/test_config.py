@@ -40,6 +40,7 @@ class TestConfig:
         service = DummyService('TestService', str(temp_dir / '__init__.py'), str(config_file))
 
         service.set_config('TestSection', 'test_key', 'test_value')
+        # TODO : json 파일에 저장되는지 확인하는 테스트 추가 필요
         assert service.get_config('TestSection', 'test_key') == 'test_value'
 
     def test_config_default_value(self, temp_dir):

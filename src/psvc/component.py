@@ -1,6 +1,12 @@
 import logging
 import itertools
 import weakref
+import os
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from .main import Service
 
 class Component:
     """
@@ -10,7 +16,23 @@ class Component:
     부모-자식 관계를 통해 컴포넌트 트리를 구성합니다.
     """
 
-    def __init__(self, svc, name, parent=None):
+    # Config 설정 경로
+    _version_conf = 'PSVC\\version'
+    # Logger 설정 경로
+    _log_conf_path = 'PSVC\\log_format'
+    # Logger 기본 포맷
+    _default_log_format = '%(asctime)s : %(name)s [%(levelname)s] %(message)s - %(lineno)s'
+    # log level 매핑
+    _log_levels = {
+        'CRITICAL': logging.CRITICAL,
+        'ERROR': logging.ERROR,
+        'WARNING': logging.WARNING,
+        'INFO': logging.INFO,
+        'DEBUG': logging.DEBUG,
+        'NOTSET': logging.NOTSET,
+    }
+
+    def __init__(self, svc: 'Service', name, parent=None):
         """
         컴포넌트 초기화
 
@@ -22,11 +44,13 @@ class Component:
         if svc == None:
             self.svc = None
             self.name = name
+            self._root_path = None
         else:
             self.svc = svc
             self.name = svc.name+'-'+name
+            self._root_path = getattr(svc, '_root_path', None)
             self.set_logger(svc.get_logger(self.name))
-            
+
         self._component_index = itertools.count(1)
         self._components = weakref.WeakValueDictionary()
         self._parent_index = None
@@ -93,6 +117,20 @@ class Component:
             self._parent = None
             self._parent_index = None
             
+    def path(self, path):
+        """
+        상대 경로를 절대 경로로 변환
+
+        Args:
+            path: 상대 또는 절대 경로
+
+        Returns:
+            str: 절대 경로
+        """
+        if os.path.isabs(path) or self._root_path is None:
+            return path
+        return os.path.join(self._root_path, path)
+
     def __repr__(self):
         """
         컴포넌트 문자열 표현
@@ -102,7 +140,13 @@ class Component:
         Returns:
             str: 컴포넌트 경로 문자열 (예: "Parent/<Child>")
         """
-        if self._parent is None:
-            return '<%s>' % (self.name,)
+        cls = self.__class__.__name__
+        if self.name == cls:
+            display_name = f'<{cls}>'
         else:
-            return '%s/<%s>' % (self._parent, self.name)
+            display_name = f'<{cls}:{self.name}>'
+
+        if self._parent is None:
+            return display_name
+        else:
+            return '%s/%s' % (self._parent, display_name)
