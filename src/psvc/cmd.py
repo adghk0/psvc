@@ -91,7 +91,8 @@ class Commander(Component):
             parent: 부모 컴포넌트
         """
         super().__init__(svc, name, parent)
-        self._sock = Socket(self.svc, name+'-Sock', parent=self)
+        self._sockets = {}
+        # self._sock = Socket(self.svc, name+'-Sock', parent=self)
         self._en = json.JSONEncoder()
         self._de = json.JSONDecoder()
         self._cmds = {}
@@ -100,7 +101,7 @@ class Commander(Component):
         self._task = self.svc.append_task(asyncio.get_running_loop(), self._receive(), name+'-Res')
         self.l.debug('새 Commander 연결됨')
 
-    def sock(self):
+    def sock(self, sid):
         """
         내부 Socket 인스턴스 반환
 
@@ -119,6 +120,7 @@ class Commander(Component):
             addr: 바인딩할 주소
             port: 포트 번호
         """
+        # TODO: 새 소켓 생성, 바인드 후 sockets 딕셔너리에 추가
         await self._sock.bind(addr, port)
 
     async def connect(self, addr: str, port: int):
@@ -132,6 +134,7 @@ class Commander(Component):
         Returns:
             int: 연결 ID
         """
+        # TODO: 새 소켓 생성, 연결 후 sockets 딕셔너리에 추가
         return await self._sock.connect(addr, port)
 
     def set_command(self, *cmd_funcs, ident=None):

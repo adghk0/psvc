@@ -20,7 +20,7 @@ class Socket(Component):
     """
     _max_size = 64 * 1024
 
-    def __init__(self, svc: 'Service', name='Socket', parent=None, callback=None, callback_end=None):
+    def __init__(self, svc: 'Service', name='Socket', parent=None):
         """
         Socket 초기화
 
@@ -37,11 +37,17 @@ class Socket(Component):
         self._recvs = {}
         self._data_available = asyncio.Event()
         self._handle_task = None
+        # TODO: 
         self._client_cid = None  # 클라이언트 모드에서 사용할 cid
-        self.callback = callback
-        self.callback_end = callback_end
-        self.l.debug('새 Socket 연결됨')
-               
+        self._callback_connect = []
+        self._callback_disconnect = []
+        # TODO: 디버그 값 수정
+        self.l.debug('새 Socket 연결됨 (Socket_id=%d)' % 0)
+
+        if isinstance(parent, EndPoint):
+            self.endpoint = parent
+
+    # Connect     
     async def bind(self, addr:str, port:int):
         """
         서버로 바인딩
@@ -70,7 +76,7 @@ class Socket(Component):
             self.server.close()
             await self.server.wait_closed()
 
-    async def connect(self, addr, port):
+    async def connect(self, addr, port, proxy=None):
         """
         서버에 연결하고 cid 반환
 
@@ -100,6 +106,8 @@ class Socket(Component):
             await asyncio.sleep(0.01)
         else:
             raise TimeoutError('타임아웃 내에 연결이 설정되지 않음')
+        
+        # TODO : proxy 처리
 
         return self._client_cid
 
@@ -116,8 +124,7 @@ class Socket(Component):
         self.l.debug('새 연결 %s', peer)
         self._conns[cid] = (peer, reader, writer)
         self._recvs[cid] = asyncio.Queue()
-        if self.callback:
-            await self.callback(cid)
+        # TODO: 콜백
 
     async def _del_connection(self, cid):
         """
@@ -128,8 +135,7 @@ class Socket(Component):
         """
         del(self._conns[cid])
         del(self._recvs[cid])
-        if self.callback_end:
-            await self.callback_end(cid)
+        # TODO: 콜백
 
     async def _handler(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         """
@@ -172,6 +178,15 @@ class Socket(Component):
             with contextlib.suppress(Exception):
                 await writer.wait_closed()
 
+    # Callback
+    # TODO: 연결 시 부를 콜백 추가
+    def append_connect_callback(self, callback):
+        pass 
+
+    def append_disconnect_callback(self, callback):
+        pass
+
+    # Transfer
     async def _send(self, msg: bytes, cid: int) -> None:
         """
         메시지 전송 (내부용)
@@ -305,3 +320,70 @@ class Socket(Component):
         if self._handle_task:
             await self.svc.delete_task(self._handle_task)
         self._handle_task = None
+
+class EndPoint(Component):
+    """
+    소켓 통신 종단 클래스
+    """
+    def __init__(self, svc: 'Service', name='EndPoint', parent=None):
+        super().__init__(svc, name, parent)
+
+    # Connection
+    def bind(self, addr, port):
+        # TODO: 소켓 추상화
+        pass
+
+    def connect(self, addr, port):
+        # TODO: 소켓 추상화
+        pass
+
+    def close(self):
+        # TODO: 소켓 추상화
+        pass
+
+    # Transfer
+    async def recv_str(self, cid: int) -> str:
+        """
+        문자열 수신
+
+        Args:
+            cid: 연결 ID
+
+        Returns:
+            str: 수신된 문자열
+        """
+        pass
+
+    async def send_str(self, string: str, cid: int) -> None:
+        """
+        문자열 전송
+
+        Args:
+            string: 전송할 문자열
+            cid: 연결 ID
+        """
+        pass
+
+    async def recv_file(self, path: os.PathLike, cid: int) -> None:
+        """
+        파일 수신
+
+        Args:
+            path: 저장할 파일 경로
+            cid: 연결 ID
+
+        Raises:
+            Exception: 파일 데이터 불일치
+        """
+        pass
+
+    async def send_file(self, path: os.PathLike, cid: int) -> None:
+        """
+        파일 전송
+
+        Args:
+            path: 전송할 파일 경로
+            cid: 연결 ID
+        """
+        pass
+
