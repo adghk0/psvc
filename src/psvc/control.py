@@ -7,4 +7,3 @@ class Controller(Component):
     def __init__(self, svc, commander, name='Controller', parent=None):
         super().__init__(svc, name, parent)
         self.commander = commander
-        

@@ -4,6 +4,7 @@ import traceback
 import os, sys
 import asyncio
 import signal
+import itertools
 
 from abc import ABC, abstractmethod
 
@@ -74,6 +75,9 @@ class Service(Component, ABC):
 
         # TaskManager 초기화
         self._task_manager = TaskManager(self.l)
+
+        # Socket serial counter (global for all sockets in this service)
+        self._socket_serial = itertools.count(1)
 
         # 시작 로그
         self.l.info('='*50)
@@ -169,6 +173,15 @@ class Service(Component, ABC):
             args: 함수에 전달할 인자 리스트
         """
         self._task_manager.append_closer(closer, args)
+
+    def next_socket_serial(self) -> int:
+        """
+        Generate next unique socket serial number
+
+        Returns:
+            int: Unique socket serial number
+        """
+        return next(self._socket_serial)
 
     def service_install(self, service_name: str | None = None) -> None:
         """
@@ -395,10 +408,10 @@ class Service(Component, ABC):
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
 
-        if self.args.install:
+        if hasattr(self.args, 'install') and self.args.install:
             self.service_install()
             return
-        elif self.args.uninstall:
+        elif hasattr(self.args, 'uninstall') and self.args.uninstall:
             self.service_uninstall()
             return
 

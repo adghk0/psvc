@@ -305,16 +305,22 @@ class DummyService:
     """클라이언트용 더미 서비스"""
     def __init__(self):
         import logging
+        import itertools
         self.l = logging.getLogger('version_client')
         self._tasks = []
         self.name = 'VersionClient'
         self.level = 'INFO'
+        self._socket_serial = itertools.count(1)
 
     def append_task(self, loop, coro, name):
         """태스크 추가"""
         task = loop.create_task(coro, name=name)
         self._tasks.append(task)
         return task
+
+    def next_socket_serial(self):
+        """Generate next unique socket serial number"""
+        return next(self._socket_serial)
 
 
 async def get_version(port, result_file):

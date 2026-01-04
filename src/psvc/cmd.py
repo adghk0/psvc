@@ -4,7 +4,7 @@ import inspect
 from typing import TYPE_CHECKING
 
 from .component import Component
-from .network import Socket
+from .network import EndPoint
 
 if TYPE_CHECKING:
     from .main import Service
@@ -14,23 +14,23 @@ def command(_func=None, *, ident=None):
     사용 형태:
 
         @command
-        async def ping(cmdr, body, cid):
+        async def ping(cmdr, body, serial):
             ...
 
         @command(ident="PING")
-        async def ping(cmdr, body, cid):
+        async def ping(cmdr, body, serial):
             ...
 
         # 인스턴스 메서드로도 사용 가능
         class MyComponent(Component):
             @command(ident="test")
-            async def my_cmd(self, cmdr, body, cid):
+            async def my_cmd(self, cmdr, body, serial):
                 ...
 
     강제 조건(@command 사용 시):
       - async 함수이어야 함
-      - 일반 함수: 인자 3개 (cmdr, body, cid)
-      - 인스턴스 메서드: 인자 4개 (self, cmdr, body, cid)
+      - 일반 함수: 인자 3개 (cmdr, body, serial)
+      - 인스턴스 메서드: 인자 4개 (self, cmdr, body, serial)
     """
     def decorator(func):
         sig = inspect.signature(func)
@@ -41,18 +41,18 @@ def command(_func=None, *, ident=None):
 
         # 파라미터 개수 검증
         if is_method:
-            # 인스턴스 메서드: self + (cmdr, body, cid) = 4개
+            # 인스턴스 메서드: self + (cmdr, body, serial) = 4개
             if len(params) != 4:
                 raise TypeError(
                     f"Command method '{func.__name__}' must have 4 parameters: "
-                    "(self, cmdr, body, cid)"
+                    "(self, cmdr, body, serial)"
                 )
         else:
-            # 일반 함수: (cmdr, body, cid) = 3개
+            # 일반 함수: (cmdr, body, serial) = 3개
             if len(params) != 3:
                 raise TypeError(
                     f"Command function '{func.__name__}' must have 3 parameters: "
-                    "(cmdr, body, cid)"
+                    "(cmdr, body, serial)"
                 )
 
         # async 함수 강제
@@ -91,51 +91,66 @@ class Commander(Component):
             parent: 부모 컴포넌트
         """
         super().__init__(svc, name, parent)
-        self._sockets = {}
-        # self._sock = Socket(self.svc, name+'-Sock', parent=self)
+        
+        self._endpoint = EndPoint(self.svc, name=name+'-EndPoint', parent=self)
+
         self._en = json.JSONEncoder()
         self._de = json.JSONDecoder()
         self._cmds = {}
         self._handle_lock = asyncio.Lock()
         self._call_stack = []
-        self._task = self.svc.append_task(asyncio.get_running_loop(), self._receive(), name+'-Res')
-        self.l.debug('새 Commander 연결됨')
+        self._task = self.svc.append_task(asyncio.get_running_loop(), self._receive(), name+'-Recv')
+        self.l.debug('새 Commander 연결됨 (Endpoint 기반)')
 
-    def sock(self, sid):
+    def endpoint(self):
         """
-        내부 Socket 인스턴스 반환
+        내부 Endpoint 인스턴스 반환
 
         Returns:
-            Socket: 내부 소켓 인스턴스
+            EndPoint: 내부 Endpoint 인스턴스
         """
-        return self._sock
+        return self._endpoint
+
+    def sock(self):
+        """
+        내부 Endpoint 인스턴스 반환 (Backwards compatibility)
+
+        Note:
+            이 메서드는 하위 호환성을 위해 제공됩니다.
+            새 코드에서는 endpoint() 메서드를 사용하세요.
+
+        Returns:
+            EndPoint: 내부 Endpoint 인스턴스
+        """
+        return self._endpoint
 
     # == Setting ==
 
-    async def bind(self, addr: str, port: int):
+    async def bind(self, addr: str, port: int) -> int:
         """
         서버로 바인딩
 
         Args:
             addr: 바인딩할 주소
             port: 포트 번호
-        """
-        # TODO: 새 소켓 생성, 바인드 후 sockets 딕셔너리에 추가
-        await self._sock.bind(addr, port)
 
-    async def connect(self, addr: str, port: int):
+        Returns:
+            int: 서버 소켓 serial 번호
         """
-        서버에 연결하고 cid 반환
+        return await self._endpoint.bind(addr, port)
+
+    async def connect(self, addr: str, port: int) -> int:
+        """
+        서버에 연결하고 serial 반환
 
         Args:
             addr: 서버 주소
             port: 포트 번호
 
         Returns:
-            int: 연결 ID
+            int: 데이터 소켓 serial 번호
         """
-        # TODO: 새 소켓 생성, 연결 후 sockets 딕셔너리에 추가
-        return await self._sock.connect(addr, port)
+        return await self._endpoint.connect(addr, port)
 
     def set_command(self, *cmd_funcs, ident=None):
         """
@@ -204,11 +219,11 @@ class Commander(Component):
                 raise ValueError('Ident가 충돌합니다. (%s)' % (cur_ident, ))
 
             # 핸들러 생성
-            # 바인딩된 메서드는 self가 자동 전달되므로 (cmdr, body, cid)만 전달
+            # 바인딩된 메서드는 self가 자동 전달되므로 (cmdr, body, serial)만 전달
             # 일반 함수는 Commander 인스턴스를 cmdr로 전달
-            async def handler(body, cid, _func=func):
+            async def handler(body, serial, _func=func):
                 try:
-                    return await _func(self, body, cid)
+                    return await _func(self, body, serial)
                 except Exception as e:
                     raise
 
@@ -230,14 +245,14 @@ class Commander(Component):
 
     # == Execute ==
 
-    async def _execute(self, ident, body, cid):
+    async def _execute(self, ident, body, serial):
         """
         명령 실행 (내부용)
 
         Args:
             ident: 명령 식별자
             body: 명령 본문
-            cid: 연결 ID
+            serial: 소켓 serial 번호
 
         Raises:
             KeyError: 명령을 찾을 수 없을 때
@@ -250,74 +265,74 @@ class Commander(Component):
             raise KeyError('명령을 찾을 수 없음: %s' % (ident, ))
 
         try:
-            return await handler(body, cid)
+            return await handler(body, serial)
         finally:
             self._call_stack.pop()
 
-    async def call(self, ident, body, cid):
+    async def call(self, ident, body, serial):
         """
         명령 호출
 
         Args:
             ident: 명령 식별자
             body: 명령 본문
-            cid: 연결 ID
+            serial: 소켓 serial 번호
 
         Returns:
             명령 핸들러의 반환값
         """
         if not self._call_stack:
             async with self._handle_lock:
-                return await self._execute(ident, body, cid)
+                return await self._execute(ident, body, serial)
         else:
-            return await self._execute(ident, body, cid)
+            return await self._execute(ident, body, serial)
 
-    async def call_header(self, cmd_header, cid):
+    async def call_header(self, cmd_header, serial):
         """
         명령 헤더로부터 명령 호출
 
         Args:
             cmd_header: 명령 헤더 딕셔너리 (_ident, _body 포함)
-            cid: 연결 ID
+            serial: 소켓 serial 번호
 
         Returns:
             명령 핸들러의 반환값
         """
         ident = cmd_header['_ident']
         body = cmd_header['_body']
-        return await self.call(ident, body, cid)
+        return await self.call(ident, body, serial)
     
 
     # == Communication ==
 
-    async def send_command(self, cmd_ident, body, cid):
+    async def send_command(self, cmd_ident, body, serial):
         """
         명령 전송
 
         Args:
             cmd_ident: 명령 식별자
             body: 명령 본문
-            cid: 연결 ID
+            serial: 소켓 serial 번호
         """
         cmd_header = {
             '_ident': cmd_ident,
             '_body': body,
         }
-        await self._sock.send_str(self._en.encode(cmd_header), cid)
+        await self._endpoint.send_str(self._en.encode(cmd_header), serial)
 
     async def _receive(self):
         """
         명령 수신 루프 (내부용)
 
-        소켓으로부터 명령을 수신하고 처리합니다.
+        Endpoint로부터 명령을 수신하고 처리합니다.
         """
         try:
             while True:
-                cid, msg = await self._sock.recv()
+                serial, msg = await self._endpoint.recv_any()
                 msg = msg.decode()
                 cmd_header = self._de.decode(msg)
-                await self.call_header(cmd_header, cid)
+                await self.call_header(cmd_header, serial)
         except asyncio.CancelledError:
             pass
         finally:
-            await self._sock.detach()
+            await self._endpoint.close_all()

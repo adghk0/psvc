@@ -17,4 +17,3 @@ backup_**/
 tests/lib/
 user_test/
 .claude/
-examples/

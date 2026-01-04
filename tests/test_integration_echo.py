@@ -50,14 +50,14 @@ class EchoService(Service):
         self.l.info(f'에코 서비스 시작: 포트 {self.port}')
 
     @command(ident='echo')
-    async def echo_command(self, cmdr, body, cid):
+    async def echo_command(self, cmdr, body, serial):
         """
         에코 명령 처리기
 
         Args:
             cmdr: Commander 인스턴스
             body: 명령 본문 {'message': str}
-            cid: 연결 ID
+            serial: 소켓 serial 번호
 
         Returns:
             str: 에코된 메시지
@@ -66,7 +66,7 @@ class EchoService(Service):
         self.l.info(f'에코 요청 수신: {message}')
 
         # 응답 전송
-        await cmdr.send_command('echo_response', {'message': message}, cid)
+        await cmdr.send_command('echo_response', {'message': message}, serial)
 
     async def run(self):
         """메인 루프"""
@@ -171,16 +171,22 @@ class DummyService:
     """클라이언트용 더미 서비스"""
     def __init__(self):
         import logging
+        import itertools
         self.l = logging.getLogger('echo_client')
         self._tasks = []
         self.name = 'EchoClient'
         self.level = 'INFO'
+        self._socket_serial = itertools.count(1)
 
     def append_task(self, loop, coro, name):
         """태스크 추가"""
         task = loop.create_task(coro, name=name)
         self._tasks.append(task)
         return task
+
+    def next_socket_serial(self):
+        """Generate next unique socket serial number"""
+        return next(self._socket_serial)
 
 
 async def send_echo(message, result_file):
@@ -200,7 +206,7 @@ async def send_echo(message, result_file):
     response_event = asyncio.Event()
 
     @command(ident='echo_response')
-    async def receive_response(cmdr, body, cid):
+    async def receive_response(cmdr, body, serial):
         nonlocal response_data
         response_data = body
         response_event.set()
@@ -209,10 +215,10 @@ async def send_echo(message, result_file):
 
     try:
         # 서버 연결
-        cid = await sock.connect('localhost', 50005)
+        serial = await sock.connect('localhost', 50005)
 
         # 에코 명령 전송
-        await cmdr.send_command('echo', {'message': message}, cid)
+        await cmdr.send_command('echo', {'message': message}, serial)
 
         # 응답 대기
         await asyncio.wait_for(response_event.wait(), timeout=5.0)
@@ -224,9 +230,11 @@ async def send_echo(message, result_file):
         }
 
     except Exception as e:
+        import traceback
         result = {
             'status': 'error',
-            'error': str(e)
+            'error': str(e) if str(e) else repr(e),
+            'traceback': traceback.format_exc()
         }
 
     # 결과 파일에 저장
