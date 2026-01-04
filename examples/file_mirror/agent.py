@@ -5,7 +5,7 @@ import asyncio
 import os
 import fnmatch
 
-from psvc import Service, Commander
+from psvc import Service, Commander, command
 
 
 class FileAgent(Service):
@@ -14,65 +14,75 @@ class FileAgent(Service):
         # 파일 추적 시스템
         self.sent_files = {}  # {absolute_path: mtime}
 
-        # 설정
-        self.watch_path = '/home/manager/test_files'
-        self.pattern = '*.txt'
+        # 설정 (Server로부터 수신)
+        self.watch_configs = []  # [{'path': '...', 'pattern': '...'}, ...]
 
-        # Commander 초기화 (명령어 등록 불필요 - 전송만 함)
+        # Commander 초기화
         self.cmdr = Commander(self)
+        self.cmdr.set_command(self.cmd_set_config)
         await self.cmdr.bind('0.0.0.0', 50620)
 
-        self.l.info('FileAgent 시작 (watch_path=%s, pattern=%s)',
-                   self.watch_path, self.pattern)
+        self.l.info('FileAgent 시작 (설정 대기 중)')
+
+    @command(ident='set_config')
+    async def cmd_set_config(self, cmdr, body, serial):
+        """Server로부터 설정 수신"""
+        # body: {'configs': [{'path': '...', 'pattern': '...'}, ...]}
+        self.watch_configs = body['configs']
+        self.l.info('설정 수신: %d개 경로', len(self.watch_configs))
+        for config in self.watch_configs:
+            self.l.info('  - %s (%s)', config['path'], config['pattern'])
 
     def check_changed_files(self):
-        """변경된 파일 확인"""
+        """변경된 파일 확인 (모든 watch_configs 순회)"""
         changed_files = []
 
-        # watch_path가 존재하지 않으면 빈 리스트 반환
-        if not os.path.exists(self.watch_path):
-            return changed_files
+        # 모든 설정 경로 순회
+        for config in self.watch_configs:
+            watch_path = config['path']
+            pattern = config['pattern']
 
-        # os.walk로 디렉토리 순회
-        for root, dirs, files in os.walk(self.watch_path):
-            for filename in files:
-                # 패턴 매칭
-                if fnmatch.fnmatch(filename, self.pattern):
-                    file_path = os.path.join(root, filename)
+            # 경로가 존재하지 않으면 스킵
+            if not os.path.exists(watch_path):
+                continue
 
-                    try:
-                        current_mtime = os.path.getmtime(file_path)
+            # os.walk로 디렉토리 순회
+            for root, dirs, files in os.walk(watch_path):
+                for filename in files:
+                    # 패턴 매칭
+                    if fnmatch.fnmatch(filename, pattern):
+                        file_path = os.path.join(root, filename)
 
-                        # 새 파일이거나 수정된 파일인지 확인
-                        if file_path not in self.sent_files or \
-                           self.sent_files[file_path] < current_mtime:
-                            changed_files.append(file_path)
-                    except OSError as e:
-                        self.l.warning('파일 접근 실패: %s (%s)', file_path, e)
+                        try:
+                            current_mtime = os.path.getmtime(file_path)
+
+                            # 새 파일이거나 수정된 파일인지 확인
+                            if file_path not in self.sent_files or \
+                               self.sent_files[file_path] < current_mtime:
+                                changed_files.append(file_path)
+                        except OSError as e:
+                            self.l.warning('파일 접근 실패: %s (%s)', file_path, e)
 
         return changed_files
 
     async def send_files_to_clients(self, files, sockets):
-        """연결된 모든 클라이언트에게 파일 전송"""
+        """연결된 모든 클라이언트에게 파일 전송 (절대 경로)"""
         for file_path in files:
-            # 상대 경로 계산
-            relative_path = os.path.relpath(file_path, self.watch_path)
-
-            self.l.info('파일 전송 시작: %s', relative_path)
+            self.l.info('파일 전송 시작: %s', file_path)
 
             # 각 클라이언트에게 전송
             for serial in sockets.keys():
                 try:
-                    # 1. 파일 메타정보 전송 (상대경로)
+                    # 1. 파일 메타정보 전송 (절대 경로)
                     await self.cmdr.send_command('recv_file',
-                                                {'path': relative_path}, serial)
+                                                {'path': file_path}, serial)
 
                     # 2. 파일 내용 전송
                     await self.cmdr.endpoint().send_file(file_path, serial)
 
-                    self.l.info('파일 전송 완료: %s -> serial=%d', relative_path, serial)
+                    self.l.info('파일 전송 완료: %s -> serial=%d', file_path, serial)
                 except Exception as e:
-                    self.l.error('파일 전송 실패: %s (%s)', relative_path, e)
+                    self.l.error('파일 전송 실패: %s (%s)', file_path, e)
 
             # mtime 업데이트
             self.sent_files[file_path] = os.path.getmtime(file_path)
