@@ -1,132 +1,208 @@
+
 import logging
-from abc import ABC, abstractmethod
 import traceback
-import os
-import sys
-import asyncio, aiofiles
+import os, sys
+import asyncio
 import signal
-import configparser
-import json
-from pathlib import Path
+import itertools
 
-from .comp import Component
+from abc import ABC, abstractmethod
+
+from .component import Component
 from .builder import Builder
+from .config import Config
+from .manage import parse_args, TaskManager, service_install, service_uninstall
+from .release import ReleaseManager
 
-
-_version_conf = 'PSVC\\version'
-_default_conf_path = 'psvc.conf'
-
-class Config(Component):
-    def __init__(self, svc, config_file, name='Config'):
-        super().__init__(svc, name)
-        self._config = configparser.ConfigParser()
-        if config_file is not None:
-            self._config_file = self.svc.path(config_file)
-        else:
-            self._config_file = self.svc.path(_default_conf_path)
-        self._config.read(self._config_file)
-
-    def set_config(self, section: str, key: str, value):
-        if section not in self._config:
-            self._config.add_section(section)
-        self._config.set(section, key, value)
-        if self._config_file:
-            with open(self._config_file, 'w') as af:
-                self._config.write(af)
-
-    def get_config(self, section: str, key: str, default=None):
-        if key is None and '\\' in section:
-            section, key = section.split('\\', 1)
-        try:
-            sec = self._config[section]
-        except KeyError:
-            if default is None or key is None:
-                raise KeyError('Section is not exist %s\\' % (section))
-            else:
-                self.set_config(section, key, default)
-                return default
-        if key is None:
-            return sec
-        elif key not in sec:
-            if default is None:
-                raise KeyError('Config is not exist %s\\%s' % (section, key))
-            else:
-                self.set_config(section, key, default)
-                return default
-        return sec[key]
-    
 
 class Service(Component, ABC):
-    _log_format = '%(asctime)s : %(name)s [%(levelname)s] %(message)s - %(lineno)s'
+    """
+    서비스 기본 클래스
 
-    def __init__(self, name='Service', root_file=None, config_file=None, level=logging.INFO):
+    비동기 작업 관리, 설정 파일 처리, 빌드/릴리스 기능을 제공하는
+    추상 베이스 클래스입니다. 사용자는 이 클래스를 상속하여
+    init(), run(), destroy() 메서드를 구현해야 합니다.
+    """
+    _version_conf = 'PSVC\\version'
+    # Build & Release 설정 경로
+    _build_spec_file_conf = 'PSVC-build\\spec_file'
+    _build_release_path_conf = 'PSVC-build\\release_path'
+    _build_exclude_patterns_conf = 'PSVC-build\\exclude_patterns'
+    _build_pyinstaller_options_conf = 'PSVC-build\\pyinstaller_options'
+
+    def __init__(self, name='Service', root_file=None, config_file=None, level=None):
+        """
+        서비스 초기화
+
+        Args:
+            name: 서비스 이름
+            root_file: 루트 파일 경로 (보통 __file__)
+            config_file: 설정 파일 경로
+            level: 로그 레벨
+
+        Raises:
+            RuntimeError: root_file이 제공되지 않았을 때
+        """
         Component.__init__(self, None, name)
         self._sigterm = asyncio.Event()
         self._loop = None
-        self._tasks = []
-        self._closers = []
         self._fh = None
         self.status = None
-        self.level = level
-        
-        self.set_root_path(root_file)
-        self.set_logger(self.level)
-        self.l.info('=======================START=======================')
-        self._config_file = config_file
-        self._config = Config(self, self._config_file)
-        self.version = self.get_config(_version_conf, None, '0.0')
+        self.level = level or 'INFO'
+        self.config_file = config_file or Config._default_conf_file
 
-# == Setting == 
-    
-    def append_task(self, loop:asyncio.AbstractEventLoop, coro, name):
-        self.l.debug('Append Task - %s', name)
-        task = loop.create_task(coro, name=name)
-        self._tasks.append(task)
-        return task
-    
-    async def delete_task(self, task: asyncio.Task):
-        self.l.debug('Delete Task - %s', task.get_name())
-        if task in self._tasks and not task.done():
-            if task is asyncio.current_task():
-                raise RuntimeError('Cannot delete the current running task')
-            
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-            self._tasks.remove(task)
+        self._set_root_path(root_file)
+        self._set_config_file(self.config_file)
+        self.args = parse_args(sys.argv[1:])
 
-    def append_closer(self, closer, args: list):
-        self._closers.append((closer, args))
+        # 설정 파일이 명령행 인자로 제공되었으면 적용 파일 변경
+        if hasattr(self.args, 'config_file') and self.args.config_file is not None:
+            self._set_config_file(self.args.config_file)
+
+        # 로거 설정
+        args_level = self.args.log_level if hasattr(self.args, 'log_level') and self.args.log_level else None
+        conf_level = self.get_config('PSVC', 'log_level', '')
+        conf_level = conf_level if conf_level != '' else None
+        self.level = args_level or conf_level or level or 'INFO'
+        self.make_logger(self.level)
+
+        # 자식 컴포넌트들에 file_handler 추가 (Config 등)
+        # TODO : Component-make_logger에서 처리
+        for comp in self._components.values():
+            if comp.file_handler is None and hasattr(self, 'file_handler'):
+                comp.file_handler = self.file_handler
+                if hasattr(comp, 'l') and comp.l:
+                    comp.l.addHandler(self.file_handler)
+
+        # TaskManager 초기화
+        self._task_manager = TaskManager(self.l)
+
+        # Socket serial counter (global for all sockets in this service)
+        self._socket_serial = itertools.count(1)
+
+        # 시작 로그
+        self.l.info('='*50)
+        self.l.info('서비스 생성됨 %s' % (self))
 
 # == Status ==
 
-    def set_status(self, status: str):
-        self.l.info('Status=%s', status)
+    def _set_config_file(self, config_file):
+        """
+        설정 파일 설정 및 버전 로드
+
+        Args:
+            config_file: 설정 파일 경로
+        """
+        if hasattr(self, '_config'):
+            del self._config
+        self._config = Config(self, config_file)
+        self.version = self.get_config(Service._version_conf, None, '0.0.0')
+
+
+    def _set_status(self, status: str):
+        """
+        서비스 상태 설정
+
+        Args:
+            status: 상태 문자열 (Initting, Running, Stopping, Stopped)
+        """
+        self.l.info('status: ---- %s ----', status)
         self.status = status
 
-    def set_logger(self, level):
-        self._fh = logging.FileHandler(self.path(self.name+'.log'))
-        self._fh.setLevel(level)
-        self._fh.setFormatter(logging.Formatter(Service._log_format))
-        logging.basicConfig(level=level, force=True,
-                            format=Service._log_format)
-        self.l = logging.getLogger(name=self.name)
-        self.l.addHandler(self._fh)
+# == Config ==
 
-    def set_root_path(self, root_file):
-        if not os.path.basename(sys.executable).startswith('python'):
-            self._root_path = os.path.abspath(os.path.dirname(sys.executable))
-        elif root_file:
-            self._root_path = os.path.abspath(os.path.dirname(root_file))
-        else:
-            self._root_path = None
+    def set_config(self, section: str, key: str, value):
+        """
+        설정 값 저장
 
-    def path(self, path):
-        if os.path.isabs(path) or self._root_path is None:
-            return path
-        return os.path.join(self._root_path, path)
+        Args:
+            section: 섹션 이름
+            key: 키 이름
+            value: 설정 값
+        """
+        self._config.set_config(section, key, value)
+
+    def get_config(self, section: str, key: str, default=None):
+        """
+        설정 값 가져오기
+
+        Args:
+            section: 섹션 이름
+            key: 키 이름
+            default: 기본값
+
+        Returns:
+            설정 값
+        """
+        return self._config.get_config(section, key, default)
+
+
+# == Operation Task Management ==
+
+    def append_task(self, loop:asyncio.AbstractEventLoop, coro, name):
+        """
+        비동기 작업 추가
+
+        Args:
+            loop: 이벤트 루프
+            coro: 코루틴
+            name: 작업 이름
+
+        Returns:
+            asyncio.Task: 생성된 태스크
+        """
+        return self._task_manager.append_task(loop, coro, name)
+
+    async def delete_task(self, task: asyncio.Task):
+        """
+        비동기 작업 삭제
+
+        Args:
+            task: 삭제할 태스크
+
+        Raises:
+            RuntimeError: 현재 실행 중인 태스크를 삭제하려 할 때
+        """
+        await self._task_manager.delete_task(task)
+
+    def append_closer(self, closer, args):
+        """
+        서비스 종료 시 호출할 함수 등록
+
+        Args:
+            closer: 종료 시 호출할 함수
+            args: 함수에 전달할 인자 리스트
+        """
+        self._task_manager.append_closer(closer, args)
+
+    def next_socket_serial(self) -> int:
+        """
+        Generate next unique socket serial number
+
+        Returns:
+            int: Unique socket serial number
+        """
+        return next(self._socket_serial)
+
+    def service_install(self, service_name: str | None = None) -> None:
+        """
+        현재 실행 파일을 OS 서비스에 등록
+
+        Args:
+            service_name: 서비스 이름 (None이면 self.name 사용)
+        """
+        svc_name = service_name or self.name
+        service_install(svc_name, self._root_path, self.l)
+
+    def service_uninstall(self, service_name: str | None = None) -> None:
+        """
+        OS 서비스에서 제거
+
+        Args:
+            service_name: 서비스 이름 (None이면 self.name 사용)
+        """
+        svc_name = service_name or self.name
+        service_uninstall(svc_name, self.l)
 
 # == Build & Release ==
 
@@ -149,11 +225,11 @@ class Service(Component, ABC):
             **pyinstaller_options: PyInstaller 추가 옵션
 
         Returns:
-            빌드된 릴리스 디렉토리 경로
+            Path: 빌드된 릴리스 디렉토리 경로
 
-        Example:
-            service = MyService('MyApp', __file__)
-            service.build(version='1.0.0', spec_file='my_app.spec')
+        Raises:
+            RuntimeError: root_path가 설정되지 않았을 때
+            BuildError: 빌드 실패 시
         """
         if self._root_path is None:
             raise RuntimeError('Root path is not set. Provide root_file in __init__')
@@ -171,7 +247,7 @@ class Service(Component, ABC):
             **pyinstaller_options
         )
 
-        self.l.info('Build completed: %s', version_dir)
+        self.l.info('빌드 완료: %s', version_dir)
         return version_dir
 
     def release(
@@ -193,75 +269,26 @@ class Service(Component, ABC):
             rollback_target: 롤백 대상 버전
 
         Returns:
-            메타데이터 딕셔너리
+            dict: 메타데이터 딕셔너리
 
-        Example:
-            # 정보 확인
-            service.release(version='1.0.0')
-
-            # 승인 처리
-            service.release(
-                version='1.0.0',
-                approve=True,
-                release_notes='Bug fixes and improvements'
-            )
+        Raises:
+            RuntimeError: root_path가 설정되지 않았을 때
+            FileNotFoundError: 버전을 찾을 수 없을 때
         """
         if self._root_path is None:
             raise RuntimeError('Root path is not set. Provide root_file in __init__')
 
-        if release_path:
-            base_path = Path(release_path)
-        else:
-            base_path = Path(self._root_path) / 'releases'
+        manager = ReleaseManager(
+            service_name=self.name,
+            root_path=self._root_path,
+            release_path=release_path,
+            logger=self.l
+        )
 
-        version_dir = base_path / version
-        status_file = version_dir / 'status.json'
-
-        if not status_file.exists():
-            raise FileNotFoundError(
-                f"Version {version} not found. "
-                f"Build it first using service.build()"
-            )
-
-        # 메타데이터 읽기
-        with open(status_file, 'r', encoding='utf-8') as f:
-            metadata = json.load(f)
-
-        # 승인 처리
         if approve:
-            print(f"\n=== Approving {self.name} v{version} ===")
-
-            metadata['status'] = 'approved'
-
-            if release_notes:
-                metadata['release_notes'] = release_notes
-
-            if rollback_target:
-                metadata['rollback_target'] = rollback_target
-
-            # 저장
-            with open(status_file, 'w', encoding='utf-8') as f:
-                json.dump(metadata, f, indent=2, ensure_ascii=False)
-
-            print(f"✓ Version {version} has been approved")
-            self.l.info('Version %s approved', version)
-
-        # 정보 출력
-        print(f"\n=== Release Information ===")
-        print(f"  Version: {metadata['version']}")
-        print(f"  Status: {metadata['status']}")
-        print(f"  Build time: {metadata['build_time']}")
-        print(f"  Platform: {metadata['platform']}")
-        print(f"  Files: {len(metadata['files'])} files")
-        print(f"  Total size: {sum(f['size'] for f in metadata['files']) / 1024 / 1024:.2f} MB")
-
-        if metadata.get('release_notes'):
-            print(f"  Release notes: {metadata['release_notes']}")
-
-        if metadata.get('rollback_target'):
-            print(f"  Rollback target: {metadata['rollback_target']}")
-
-        return metadata
+            return manager.approve(version, release_notes, rollback_target)
+        else:
+            return manager.get_info(version)
 
     def rollback(
         self,
@@ -277,108 +304,199 @@ class Service(Component, ABC):
             to_version: 되돌릴 버전
             release_path: 릴리스 경로
 
-        Example:
-            # 1.0.0에 문제가 있어서 0.9.5로 롤백
-            service.rollback(from_version='1.0.0', to_version='0.9.5')
+        Returns:
+            dict: 롤백 정보
+
+        Raises:
+            RuntimeError: root_path가 설정되지 않았을 때
+            FileNotFoundError: 버전을 찾을 수 없을 때
         """
         if self._root_path is None:
             raise RuntimeError('Root path is not set. Provide root_file in __init__')
 
-        if release_path:
-            base_path = Path(release_path)
-        else:
-            base_path = Path(self._root_path) / 'releases'
+        manager = ReleaseManager(
+            service_name=self.name,
+            root_path=self._root_path,
+            release_path=release_path,
+            logger=self.l
+        )
 
-        print(f"\n=== Rolling back from v{from_version} to v{to_version} ===")
+        return manager.rollback(from_version, to_version)
 
-        # 1. from_version을 deprecated 처리
-        from_dir = base_path / from_version
-        from_status_file = from_dir / 'status.json'
+    def apply(self, root_file=None, config_file=None):
+        """
+        다운로드된 버전을 root_path로 복사 (자기 자신 교체)
 
-        if not from_status_file.exists():
-            raise FileNotFoundError(f"Version {from_version} not found")
-
-        with open(from_status_file, 'r', encoding='utf-8') as f:
-            from_metadata = json.load(f)
-
-        from_metadata['status'] = 'deprecated'
-        from_metadata['rollback_target'] = to_version
-
-        with open(from_status_file, 'w', encoding='utf-8') as f:
-            json.dump(from_metadata, f, indent=2, ensure_ascii=False)
-
-        print(f"  ✓ Version {from_version} marked as deprecated")
-
-        # 2. to_version 확인
-        to_dir = base_path / to_version
-        to_status_file = to_dir / 'status.json'
-
-        if not to_status_file.exists():
-            raise FileNotFoundError(f"Rollback target {to_version} not found")
-
-        with open(to_status_file, 'r', encoding='utf-8') as f:
-            to_metadata = json.load(f)
-
-        if to_metadata['status'] != 'approved':
-            print(f"  Warning: Target version {to_version} is not approved")
-            print(f"  Current status: {to_metadata['status']}")
-
-        print(f"  ✓ Rollback target {to_version} is available")
-        print(f"\nRollback completed. Clients will use v{to_version}")
-
-        self.l.info('Rolled back from %s to %s', from_version, to_version)
-
-        return {
-            'from_version': from_version,
-            'to_version': to_version,
-            'from_metadata': from_metadata,
-            'to_metadata': to_metadata
-        }
-
-# == Config ==
-
-    def set_config(self, section: str, key: str, value):
-        self._config.set_config(section, key, value)
-
-    def get_config(self, section: str, key: str, default=None):
-        return self._config.get_config(section, key, default)
+        Args:
+            root_file: 루트 파일 경로 (미사용, 호환성 유지)
+            config_file: 설정 파일 경로 (미사용, 호환성 유지)
+        """
+        ReleaseManager.apply(self._root_path, self.get_config, self.l)
 
 
 # == Running ==
 
+    def _get_build_mode_args(self):
+        spec_file = self.args.spec_file if self.args.spec_file is not None else \
+                    self.get_config(Service._build_spec_file_conf, None, '')
+        release_path = self.args.release_path if self.args.release_path is not None else \
+                       self.get_config(Service._build_release_path_conf, None, 'releases')
+        exclude_patterns = self.args.exclude_patterns if self.args.exclude_patterns is not None else \
+                           self.get_config(Service._build_exclude_patterns_conf, None, ['*.conf', '*.log'])
+        pyinstaller_options = self.args.pyinstaller_options if self.args.pyinstaller_options is not None else \
+                              self.get_config(Service._build_pyinstaller_options_conf, None, [])
+        return spec_file, release_path, exclude_patterns, pyinstaller_options
+
+    def _parse_pyinstaller_options(self, options):
+        parsed_options = {}
+        if not isinstance(options, (list, tuple)):
+            return parsed_options
+
+        for option in options:
+            if not isinstance(option, str) or '=' not in option:
+                continue
+            key, value = option.split('=', 1)
+            if key:
+                parsed_options[key] = value
+
+        return parsed_options
+
+    def _run_build_mode(self) -> int:
+        spec_file, release_path, exclude_patterns, pyinstaller_options = self._get_build_mode_args()
+        self.build(
+            spec_file=spec_file,
+            release_path=release_path,
+            version=self.args.version,
+            exclude_patterns=exclude_patterns,
+            **self._parse_pyinstaller_options(pyinstaller_options)
+        )
+        return 0
+
+    def _run_release_mode(self) -> int:
+        release_path = self.args.release_path if self.args.release_path is not None else \
+                       self.get_config(Service._build_release_path_conf, None, 'releases')
+
+        self.release(
+            version=self.args.version,
+            approve=self.args.approve,
+            release_path=release_path,
+            release_notes=self.args.release_notes,
+            rollback_target=self.args.rollback_target
+        )
+        return 0
+
+    def _run_apply_mode(self) -> int:
+        self.apply(
+            root_file=self.args.root_file,
+            config_file=self.args.config_file
+        )
+        return 0
+
+    def _run_service_mode(self) -> int:
+        self._run()
+        return 0
+
     def on(self):
+        """
+        서비스 시작
+
+        명령행 인자에 따라 빌드/릴리스/실행 모드로 동작합니다.
+
+        Returns:
+            int: 종료 코드 (0: 성공, 1: 실패)
+        """
+        self.l.info('PyService 시작 %s', self)
+
+        mode = self.args.mode
+        code = 0
+
+        if mode in ('build', 'release') and getattr(sys, 'frozen', False):
+            self.l.error('릴리스된 파일에서는 빌드 또는 릴리스할 수 없습니다.')
+            return 2
+
+        if mode == 'build':
+            code = self._run_build_mode()
+        elif mode == 'release':
+            code = self._run_release_mode()
+        elif mode == 'apply':
+            code = self._run_apply_mode()
+        elif mode == 'run':
+            code = self._run_service_mode()
+        else:
+            self.l.error('알 수 없는 모드: %s', mode)
+            return 1
+
+        if code == 0:
+            self.l.info('PyService 중지됨 %s', self)
+        return code
+
+    def _run(self):
+        """
+        서비스 실행 루프
+
+        이벤트 루프를 생성하고 서비스를 실행합니다.
+        """
+        # Signal 핸들러 등록
         signal.signal(signal.SIGTERM, self.stop)
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
 
-        self.l.info('PyService Start %s', self)
+        if hasattr(self.args, 'install') and self.args.install:
+            self.service_install()
+            return
+        elif hasattr(self.args, 'uninstall') and self.args.uninstall:
+            self.service_uninstall()
+            return
+
+        # 메인 서비스 작업 추가
         self.append_task(self._loop, self._service(), 'ServiceWork')
+        tasks = self._task_manager.get_tasks()
+
         try:
-            self._loop.run_until_complete(asyncio.gather(*self._tasks, return_exceptions=True))
+            self._loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
         except KeyboardInterrupt as i:
-            self.l.info('Stopping by KeyBoardInterrupt')
+            self.l.info('키보드 인터럽트 수신됨. 서비스 중지 중...')
         finally:
-            for t in self._tasks:
+            # 모든 작업 취소 및 정리
+            self.l.info('작업 정리 중...')
+            for t in tasks:
                 t.cancel()
-            self._loop.run_until_complete(asyncio.gather(*self._tasks, return_exceptions=True))
+            self._loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
         self._loop.close()
 
-        for closer, args in self._closers:
-            closer(*args)
+        # 서비스 종료 작업 처리
+        try:
+            for closer, args in self._task_manager.get_closers():
+                closer(*args)
+        except Exception as e:
+            self.l.error('closer 실행 중 오류 - %s%s: %s', closer.__name__, str(args), e)
 
     def stop(self, signum=None, frame=None):
-        """서비스 중지. signal 핸들러로도 사용 가능"""
+        """
+        서비스 중지
+
+        signal 핸들러로도 사용 가능합니다.
+
+        Args:
+            signum: 시그널 번호 (선택)
+            frame: 프레임 객체 (선택)
+        """
         self._sigterm.set()
 
     async def _service(self):
-        self.set_status('Initting')
+        """
+        서비스 메인 루프
+
+        init() -> run() -> destroy() 순서로 실행합니다.
+        """
+        self._set_status('Initting')
         try:
             await self.init()
         except asyncio.CancelledError as c:
-            self.l.error('Service Cancelled while initting.')
+            self.l.error('초기화 중 서비스가 취소됨.')
             self.stop()
         except Exception as e:
-            self.l.error('== Error occurred while initting. ==')
+            self.l.error('== 초기화 중 오류 발생 ==')
             self.l.error(traceback.format_exc())
             self.stop()
         finally:
@@ -386,37 +504,62 @@ class Service(Component, ABC):
 
         try:
             if not self._sigterm.is_set():
-                self.set_status('Running')
+                self._set_status('Running')
                 while not self._sigterm.is_set():
                     await self.run()
         except asyncio.CancelledError as c:
-            self.l.error('Service Cancelled while running.')
+            pass # 서비스 취소 처리
         except Exception as e:
-            self.l.error('== Error occurred while running. ==')
+            self.l.error('== 실행 중 오류 발생 ==')
             self.l.error(traceback.format_exc())
 
         finally:
-            self.set_status('Stopping')
+            self._set_status('Stopping')
             try:
                 await self.destroy()
             except Exception as e:
-                self.l.error('== Error occurred while destorying. ==')
+                self.l.error('== 종료 중 오류 발생 ==')
                 self.l.error(traceback.format_exc())
-            self.set_status('Stopped')
+            self._set_status('Stopped')
 
-# == User Defined == 
+
+# == User Defined ==
 
     async def init(self):
+        """
+        서비스 초기화
+
+        서비스 시작 시 호출됩니다. 하위 클래스에서 오버라이드하여 사용합니다.
+        """
         await asyncio.sleep(0.1)
 
     @abstractmethod
     async def run(self):
+        """
+        서비스 메인 로직
+
+        서비스 실행 중 반복적으로 호출됩니다.
+        하위 클래스에서 반드시 구현해야 합니다.
+        """
         pass
 
     async def destroy(self):
+        """
+        서비스 종료 처리
+
+        서비스 종료 시 호출됩니다. 하위 클래스에서 오버라이드하여 사용합니다.
+        """
         await asyncio.sleep(0.1)
+
 
 # == Repr ==
 
     def __repr__(self):
+        """
+        서비스 문자열 표현
+
+        Returns:
+            str: 서비스 이름과 상태 (예: "<MyService> - Running")
+        """
         return '<%s> - %s' % (self.name, self.status)
+

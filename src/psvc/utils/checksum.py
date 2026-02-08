@@ -17,7 +17,7 @@ def calculate_checksum(file_path: str, algorithm: str = 'sha256') -> str:
         "{algorithm}:{checksum}" 형식의 문자열
     """
     if not os.path.isfile(file_path):
-        raise FileNotFoundError(f"File not found: {file_path}")
+        raise FileNotFoundError(f"파일을 찾을 수 없음: {file_path}")
 
     hasher = hashlib.new(algorithm)
 
@@ -44,8 +44,8 @@ def verify_checksum(file_path: str, expected_checksum: str) -> bool:
         algorithm, expected_hash = expected_checksum.split(':', 1)
     except ValueError:
         raise ValueError(
-            f"Invalid checksum format: '{expected_checksum}'. "
-            f"Expected format: 'algorithm:hash'"
+            f"잘못된 체크섬 형식: '{expected_checksum}'. "
+            f"예상 형식: 'algorithm:hash'"
         )
 
     actual_checksum = calculate_checksum(file_path, algorithm)
@@ -84,6 +84,6 @@ def calculate_directory_checksums(
             try:
                 checksums[rel_path] = calculate_checksum(file_path)
             except Exception as e:
-                print(f"Warning: Failed to calculate checksum for {rel_path}: {e}")
+                print(f"경고: {rel_path}의 체크섬 계산 실패: {e}")
 
     return checksums

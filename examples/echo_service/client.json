@@ -1,0 +1,21 @@
+{
+  "PSVC": {
+    "version": "0.0.0",
+    "update_path": "updates",
+    "log_format": "%(asctime)s : %(name)s [%(levelname)s] %(message)s - %(lineno)s",
+    "log_level": ""
+  },
+  "Client": {
+    "server_host": "127.0.0.1",
+    "server_port": "50010"
+  },
+  "PSVC-build": {
+    "spec_file": "./client.spec",
+    "release_path": "./examples/echo_service/releases",
+    "exclude_patterns": [
+      "*.conf",
+      "*.log"
+    ],
+    "pyinstaller_options": []
+  }
+}

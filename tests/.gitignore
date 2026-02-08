@@ -1,0 +1,18 @@
+# pytest 캐시
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# 테스트 중 생성되는 임시 파일
+*.log
+*.json
+*.conf
+
+# 커버리지 리포트
+.coverage
+htmlcov/
+*.cover
+
+# 임시 디렉토리 (conftest.py에서 자동 정리되지만 안전장치)
+psvc_test_*/

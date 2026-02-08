@@ -1,0 +1,7 @@
+{
+  "PSVC": {
+    "version": "0.0.0",
+    "log_level": "",
+    "log_format": "%(asctime)s : %(name)s [%(levelname)s] %(message)s - %(lineno)s"
+  }
+}
