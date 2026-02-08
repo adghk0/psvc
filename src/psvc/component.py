@@ -153,10 +153,17 @@ class Component:
             component: 추가할 자식 컴포넌트
         """
         # TODO : 다단계 서비스에서 디버깅을 돕도록 부모 경로를 로그 메시지에 포함하는 계층형 로깅 컨텍스트를 추가한다 @codex
+        if component._parent is self:
+            return
+
+        if component._parent is not None:
+            component.detach()
+
         index = next(self._component_index)
         self._components[index] = component
         component._parent_index = index
         component._parent = self
+        component.on_attach(self)
 
     def delete_child(self, index):
         """
@@ -166,8 +173,14 @@ class Component:
             index: 제거할 자식 컴포넌트의 인덱스
         """
         # TODO : 비활성 서비스나 부모에 붙으려 할 때 경고/로그를 남겨 고아 컴포넌트가 생기지 않도록 방지 장치를 추가한다 @codex
-        if index in self._components:
-            del self._components[index]
+        component = self._components.get(index)
+        if component is None:
+            return
+
+        del self._components[index]
+        component._parent = None
+        component._parent_index = None
+        component.on_detach(self)
 
     def attach(self, parent):
         """
@@ -186,8 +199,24 @@ class Component:
         """
         if self._parent is not None and self._parent_index is not None:
             self._parent.delete_child(self._parent_index)
-            self._parent = None
-            self._parent_index = None
+
+    def on_attach(self, parent):
+        """
+        부모에 attach될 때 호출되는 생명주기 훅
+
+        Args:
+            parent: attach된 부모 컴포넌트
+        """
+        pass
+
+    def on_detach(self, parent):
+        """
+        부모에서 detach될 때 호출되는 생명주기 훅
+
+        Args:
+            parent: detach되기 전 부모 컴포넌트
+        """
+        pass
             
     def path(self, path):
         """

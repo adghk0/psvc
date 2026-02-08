@@ -169,7 +169,7 @@ def service_install(service_name: str, root_path: str, logger) -> None:
                 'start=', 'auto'
             ]
             logger.debug('Windows service install command: %s', cmd)
-            subprocess.check_call(' '.join(cmd), shell=True)
+            subprocess.check_call(cmd)
 
         elif system.startswith('linux'):
             unit_name = f'{service_name}.service'

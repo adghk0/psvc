@@ -61,7 +61,8 @@ class Service(Component, ABC):
 
         # 로거 설정
         args_level = self.args.log_level if hasattr(self.args, 'log_level') and self.args.log_level else None
-        conf_level = self.get_config('PSVC', 'log_level', '') if self.get_config('PSVC', 'log_level', '') == '' else None
+        conf_level = self.get_config('PSVC', 'log_level', '')
+        conf_level = conf_level if conf_level != '' else None
         self.level = args_level or conf_level or level or 'INFO'
         self.make_logger(self.level)
 
@@ -335,6 +336,66 @@ class Service(Component, ABC):
 
 # == Running ==
 
+    def _get_build_mode_args(self):
+        spec_file = self.args.spec_file if self.args.spec_file is not None else \
+                    self.get_config(Service._build_spec_file_conf, None, '')
+        release_path = self.args.release_path if self.args.release_path is not None else \
+                       self.get_config(Service._build_release_path_conf, None, 'releases')
+        exclude_patterns = self.args.exclude_patterns if self.args.exclude_patterns is not None else \
+                           self.get_config(Service._build_exclude_patterns_conf, None, ['*.conf', '*.log'])
+        pyinstaller_options = self.args.pyinstaller_options if self.args.pyinstaller_options is not None else \
+                              self.get_config(Service._build_pyinstaller_options_conf, None, [])
+        return spec_file, release_path, exclude_patterns, pyinstaller_options
+
+    def _parse_pyinstaller_options(self, options):
+        parsed_options = {}
+        if not isinstance(options, (list, tuple)):
+            return parsed_options
+
+        for option in options:
+            if not isinstance(option, str) or '=' not in option:
+                continue
+            key, value = option.split('=', 1)
+            if key:
+                parsed_options[key] = value
+
+        return parsed_options
+
+    def _run_build_mode(self) -> int:
+        spec_file, release_path, exclude_patterns, pyinstaller_options = self._get_build_mode_args()
+        self.build(
+            spec_file=spec_file,
+            release_path=release_path,
+            version=self.args.version,
+            exclude_patterns=exclude_patterns,
+            **self._parse_pyinstaller_options(pyinstaller_options)
+        )
+        return 0
+
+    def _run_release_mode(self) -> int:
+        release_path = self.args.release_path if self.args.release_path is not None else \
+                       self.get_config(Service._build_release_path_conf, None, 'releases')
+
+        self.release(
+            version=self.args.version,
+            approve=self.args.approve,
+            release_path=release_path,
+            release_notes=self.args.release_notes,
+            rollback_target=self.args.rollback_target
+        )
+        return 0
+
+    def _run_apply_mode(self) -> int:
+        self.apply(
+            root_file=self.args.root_file,
+            config_file=self.args.config_file
+        )
+        return 0
+
+    def _run_service_mode(self) -> int:
+        self._run()
+        return 0
+
     def on(self):
         """
         서비스 시작
@@ -346,56 +407,28 @@ class Service(Component, ABC):
         """
         self.l.info('PyService 시작 %s', self)
 
-        if not getattr(sys, 'frozen', False):
-            if self.args.mode == 'build':
-                # TODO : 빌드 모드에 대한 세부 작업을 builder 모듈로 이동한다
-                spec_file = self.args.spec_file if self.args.spec_file is not None else \
-                            self.get_config(Service._build_spec_file_conf, None, '')
-                release_path = self.args.release_path if self.args.release_path is not None else \
-                               self.get_config(Service._build_release_path_conf, None, 'releases')
-                exclude_patterns = self.args.exclude_patterns if self.args.exclude_patterns is not None else \
-                                   self.get_config(Service._build_exclude_patterns_conf, None, ['*.conf', '*.log'])
-                pyinstaller_options = self.args.pyinstaller_options if self.args.pyinstaller_options is not None else \
-                                      self.get_config(Service._build_pyinstaller_options_conf, None, [])
+        mode = self.args.mode
+        code = 0
 
-                self.build(
-                    spec_file=spec_file,
-                    release_path=release_path,
-                    version=self.args.version,
-                    exclude_patterns=exclude_patterns,
-                    **{k: v for k, v in (opt.split('=', 2) for opt in pyinstaller_options if '=' in opt)}
-                )
-                return 0
-            elif self.args.mode == 'release':
-                # TODO : 릴리스 모드에 대한 세부 작업을 release 모듈로 이동한다
-                release_path = self.args.release_path if self.args.release_path is not None else \
-                               self.get_config(Service._build_release_path_conf, None, 'releases')
-
-                self.release(
-                    version=self.args.version,
-                    approve=self.args.approve,
-                    release_path=release_path,
-                    release_notes=self.args.release_notes,
-                    rollback_target=self.args.rollback_target
-                )
-                return 0
-
-        if self.args.mode == 'apply':
-            self.apply(
-                root_file=self.args.root_file,
-                config_file=self.args.config_file
-            )
-        elif self.args.mode == 'run':
-            self._run()
-        elif self.args.mode in ('build', 'release'):
+        if mode in ('build', 'release') and getattr(sys, 'frozen', False):
             self.l.error('릴리스된 파일에서는 빌드 또는 릴리스할 수 없습니다.')
             return 2
+
+        if mode == 'build':
+            code = self._run_build_mode()
+        elif mode == 'release':
+            code = self._run_release_mode()
+        elif mode == 'apply':
+            code = self._run_apply_mode()
+        elif mode == 'run':
+            code = self._run_service_mode()
         else:
-            self.l.error('알 수 없는 모드: %s', self.args.mode)
+            self.l.error('알 수 없는 모드: %s', mode)
             return 1
 
-        self.l.info('PyService 중지됨 %s', self)
-        return 0
+        if code == 0:
+            self.l.info('PyService 중지됨 %s', self)
+        return code
 
     def _run(self):
         """
