@@ -9,29 +9,47 @@ def parse_version(version_str: str) -> Tuple[int, int, int]:
     Semantic version 문자열을 파싱
 
     Args:
-        version_str: 버전 문자열 (예: "1.0.0", "0.9.5")
+        version_str: 버전 문자열 (예: "1.0.0", "0.9.5", "1.0")
 
     Returns:
-        (major, minor, patch) 튜플
+        (major, minor, patch) 튜플 (patch가 없으면 0으로 설정)
 
     Raises:
         ValueError: 잘못된 버전 형식
     """
-    pattern = r'^(\d+)\.(\d+)\.(\d+)$'
-    match = re.match(pattern, version_str)
+    # MAJOR.MINOR.PATCH 형식
+    pattern_full = r'^(\d+)\.(\d+)\.(\d+)$'
+    match = re.match(pattern_full, version_str)
 
-    if not match:
-        raise ValueError(
-            f"Invalid version format: '{version_str}'. "
-            f"Expected format: MAJOR.MINOR.PATCH (e.g., 1.0.0)"
-        )
+    if match:
+        major, minor, patch = match.groups()
+        return (int(major), int(minor), int(patch))
 
-    major, minor, patch = match.groups()
-    return (int(major), int(minor), int(patch))
+    # MAJOR.MINOR 형식 (patch는 0으로 처리)
+    pattern_short = r'^(\d+)\.(\d+)$'
+    match = re.match(pattern_short, version_str)
+
+    if match:
+        major, minor = match.groups()
+        return (int(major), int(minor), 0)
+
+    # 둘 다 아니면 에러
+    raise ValueError(
+        f"잘못된 버전 형식: '{version_str}'. "
+        f"예상 형식: MAJOR.MINOR.PATCH (예: 1.0.0) 또는 MAJOR.MINOR (예: 1.0)"
+    )
 
 
 def is_valid_version(version_str: str) -> bool:
-    """버전 문자열이 유효한지 확인"""
+    """
+    버전 문자열이 유효한지 확인
+
+    Args:
+        version_str: 검증할 버전 문자열
+
+    Returns:
+        bool: 유효하면 True, 아니면 False
+    """
     try:
         parse_version(version_str)
         return True
