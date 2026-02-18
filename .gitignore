@@ -1,7 +1,7 @@
 **/__pycache__/
 **/log/
 **.log
-.venv/
+.venv**/
 .pytest_cache/
 
 .rollback/
